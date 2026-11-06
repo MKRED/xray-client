@@ -3,6 +3,7 @@ package com.mkred.xrayclient.core
 import com.mkred.xrayclient.data.AppStore
 import com.mkred.xrayclient.data.Profile
 import com.mkred.xrayclient.data.SelectionMode
+import com.mkred.xrayclient.log.AppLog
 
 /**
  * Выбор сервера по режиму:
@@ -17,6 +18,17 @@ object ServerSelector {
     private const val MIN_GAIN_RATIO = 0.7
 
     suspend fun pick(current: Profile? = null): Profile? {
+        val data = AppStore.data.value
+        val result = choose(current)
+        if (result?.id != current?.id) {
+            AppLog.i("Selector", "Режим ${data.mode}: выбран «${result?.name}» (было «${current?.name}»)")
+        } else {
+            AppLog.d("Selector", "Режим ${data.mode}: остаёмся на «${current?.name}»")
+        }
+        return result
+    }
+
+    private suspend fun choose(current: Profile?): Profile? {
         val data = AppStore.data.value
         val url = data.testUrl
         return when (data.mode) {

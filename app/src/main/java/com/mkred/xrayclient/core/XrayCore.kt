@@ -1,9 +1,9 @@
 package com.mkred.xrayclient.core
 
 import android.content.Context
-import android.util.Log
 import com.mkred.xrayclient.data.AppStore
 import com.mkred.xrayclient.data.Profile
+import com.mkred.xrayclient.log.AppLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -25,7 +25,7 @@ object XrayCore {
         go.Seq.setContext(context.applicationContext)
         Libv2ray.initCoreEnv(context.filesDir.absolutePath, "")
         initialized = true
-        Log.i(TAG, "Xray ${version()}")
+        AppLog.i(TAG, "Ядро: ${version()}")
     }
 
     fun version(): String = runCatching { Libv2ray.checkVersionX() }.getOrDefault("?")
@@ -35,6 +35,7 @@ object XrayCore {
             override fun startup(): Long = 0
             override fun shutdown(): Long = 0
             override fun onEmitStatus(code: Long, msg: String?): Long {
+                AppLog.i("Xray", "статус $code: $msg")
                 msg?.let(onStatus)
                 return 0
             }
@@ -43,12 +44,14 @@ object XrayCore {
     /** Задержка через сервер в мс, -1 — сервер не отвечает. */
     suspend fun measure(p: Profile, url: String): Long = withContext(Dispatchers.IO) {
         runCatching { Libv2ray.measureOutboundDelay(XrayConfig.forTest(p), url) }
-            .getOrElse { Log.w(TAG, "test ${p.name}: ${it.message}"); -1L }
+            .getOrElse { AppLog.w(TAG, "Проверка «${p.name}»: ${it.message}"); -1L }
             .let { if (it <= 0) -1L else it }
+            .also { AppLog.d(TAG, "Пинг «${p.name}» (${p.address}:${p.port}): ${if (it < 0) "недоступен" else "$it мс"}") }
     }
 
     /** Проверить список серверов параллельно (не больше 6 одновременно). */
     suspend fun measureAll(list: List<Profile>, url: String): Map<String, Long> = coroutineScope {
+        AppLog.i(TAG, "Проверка ${list.size} серверов через $url")
         val gate = Semaphore(6)
         list.map { p ->
             async {
@@ -56,6 +59,8 @@ object XrayCore {
                 AppStore.setDelay(p.id, d)
                 p.id to d
             }
-        }.awaitAll().toMap()
+        }.awaitAll().toMap().also { r ->
+            AppLog.i(TAG, "Проверка завершена: доступно ${r.values.count { it > 0 }} из ${r.size}")
+        }
     }
 }

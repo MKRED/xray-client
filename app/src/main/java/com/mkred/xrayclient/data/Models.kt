@@ -101,4 +101,6 @@ data class AppData(
     val testUrl: String = "https://www.gstatic.com/generate_204",
     /** Как часто проверять серверы во время работы, секунды. */
     val checkIntervalSec: Int = 30,
+    /** Подробность лога ядра Xray: warning, info или debug. */
+    val logLevel: String = "info",
 )

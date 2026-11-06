@@ -1,8 +1,8 @@
 package com.mkred.xrayclient.data
 
 import android.content.Context
-import android.util.Log
 import com.mkred.xrayclient.core.LinkParser
+import com.mkred.xrayclient.log.AppLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,9 +31,10 @@ object AppStore {
     fun init(context: Context) {
         file = File(context.filesDir, "data.json")
         val loaded = runCatching { if (file.exists()) fromJson(JSONObject(file.readText())) else AppData() }
-            .onFailure { Log.e(TAG, "load failed", it) }
+            .onFailure { AppLog.e(TAG, "Не удалось прочитать data.json", it) }
             .getOrDefault(AppData())
         set(loaded, save = false)
+        AppLog.i(TAG, "Загружено: подписок ${loaded.subscriptions.size}, серверов ${_profiles.value.size}, режим ${loaded.mode}")
     }
 
     @Synchronized
@@ -47,7 +48,7 @@ object AppStore {
             LinkParser.parse(stored.link)?.copy(subscriptionId = stored.subscriptionId)
         }.distinctBy { it.id }
         if (save) runCatching { file.writeText(toJson(value).toString()) }
-            .onFailure { Log.e(TAG, "save failed", it) }
+            .onFailure { AppLog.e(TAG, "Не удалось сохранить data.json", it) }
     }
 
     fun setDelay(id: String, delay: Long) {
@@ -102,6 +103,7 @@ object AppStore {
         put("priority", JSONArray(d.priority))
         put("testUrl", d.testUrl)
         put("checkIntervalSec", d.checkIntervalSec)
+        put("logLevel", d.logLevel)
     }
 
     private fun fromJson(o: JSONObject): AppData {
@@ -129,6 +131,7 @@ object AppStore {
             priority = o.optJSONArray("priority")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
             testUrl = o.optString("testUrl").ifEmpty { defaults.testUrl },
             checkIntervalSec = o.optInt("checkIntervalSec", defaults.checkIntervalSec),
+            logLevel = o.optString("logLevel").ifEmpty { defaults.logLevel },
         )
     }
 

@@ -10,7 +10,6 @@ import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
-import android.util.Log
 import androidx.core.content.ContextCompat
 import com.mkred.xrayclient.R
 import com.mkred.xrayclient.core.ServerSelector
@@ -19,6 +18,7 @@ import com.mkred.xrayclient.core.XrayCore
 import com.mkred.xrayclient.data.AppStore
 import com.mkred.xrayclient.data.Profile
 import com.mkred.xrayclient.data.SelectionMode
+import com.mkred.xrayclient.log.AppLog
 import com.mkred.xrayclient.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -64,6 +64,7 @@ class XrayVpnService : VpnService() {
     private var monitor: Job? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        AppLog.i(TAG, "Команда: ${intent?.action ?: "запуск системой"}")
         when (intent?.action) {
             ACTION_STOP -> {
                 scope.launch { shutdown() }
@@ -80,6 +81,7 @@ class XrayVpnService : VpnService() {
     }
 
     override fun onRevoke() {
+        AppLog.w(TAG, "Система отозвала VPN")
         // Система отозвала VPN (например, включили другой VPN)
         scope.launch { shutdown() }
     }
@@ -98,21 +100,25 @@ class XrayVpnService : VpnService() {
         if (tun != null) return@withLock
         VpnStateHolder.set { it.copy(status = VpnStatus.CONNECTING, message = "Выбор сервера…") }
 
+        val data = AppStore.data.value
+        AppLog.i(TAG, "Подключение: режим ${data.mode}, серверов ${AppStore.profiles.value.size}")
         val profile = ServerSelector.pick()
         if (profile == null) {
             fail("Нет серверов — добавьте подписку")
             return@withLock
         }
 
-        val iface = establish() ?: run {
+        val iface = runCatching { establish() }
+            .onFailure { AppLog.e(TAG, "establish()", it) }
+            .getOrNull() ?: run {
             fail("Не удалось создать VPN-интерфейс")
             return@withLock
         }
         tun = iface
-        controller = XrayCore.newController { Log.i(TAG, it) }
+        controller = XrayCore.newController { }
 
         if (!startCore(profile)) {
-            fail("Xray не запустился: проверьте сервер")
+            fail(VpnStateHolder.state.value.message ?: "Xray не запустился: проверьте сервер")
             return@withLock
         }
         startMonitor()
@@ -136,7 +142,9 @@ class XrayVpnService : VpnService() {
         val fd = tun?.fd ?: return false
         val c = controller ?: return false
         return try {
-            c.startLoop(XrayConfig.forVpn(p), fd)
+            AppLog.i(TAG, "Запуск ядра: «${p.name}» ${p.protocol} ${p.address}:${p.port} ${p.network}/${p.security}")
+            c.startLoop(XrayConfig.forVpn(p, AppStore.data.value.logLevel), fd)
+            AppLog.i(TAG, "Ядро запущено")
             current = p
             VpnStateHolder.set {
                 it.copy(
@@ -150,14 +158,15 @@ class XrayVpnService : VpnService() {
             updateNotification(p)
             true
         } catch (e: Exception) {
-            Log.e(TAG, "startLoop", e)
+            AppLog.e(TAG, "Ядро не запустилось: ${e.message}", e)
+            VpnStateHolder.set { it.copy(message = "Ошибка ядра: ${e.message}") }
             false
         }
     }
 
     /** Переключение на другой сервер без пересоздания VPN-интерфейса. */
     private fun switchTo(p: Profile) {
-        Log.i(TAG, "switch ${current?.name} -> ${p.name}")
+        AppLog.i(TAG, "Переключение: «${current?.name}» → «${p.name}»")
         runCatching { controller?.stopLoop() }
         if (!startCore(p)) VpnStateHolder.set { it.copy(message = "Не удалось переключиться на ${p.name}") }
     }
@@ -175,18 +184,19 @@ class XrayVpnService : VpnService() {
             while (isActive) {
                 delay(AppStore.data.value.checkIntervalSec.coerceAtLeast(10) * 1000L)
                 if (AppStore.data.value.mode == SelectionMode.MANUAL) continue
-                runCatching { reselect() }.onFailure { Log.w(TAG, "monitor", it) }
+                runCatching { reselect() }.onFailure { AppLog.w(TAG, "Ошибка фоновой проверки", it) }
             }
         }
     }
 
     private suspend fun fail(msg: String) {
-        Log.w(TAG, msg)
+        AppLog.w(TAG, "Остановка из-за ошибки: $msg")
         shutdown()
         VpnStateHolder.set { it.copy(message = msg) }
     }
 
     private suspend fun shutdown() {
+        AppLog.i(TAG, "Отключение")
         monitor?.cancel()
         runCatching { controller?.stopLoop() }
         runCatching { tun?.close() }

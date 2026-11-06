@@ -11,8 +11,13 @@ object XrayConfig {
     const val MTU = 1500
 
     /** Полный конфиг для работы VPN: TUN-вход → прокси. */
-    fun forVpn(p: Profile): String = JSONObject().apply {
-        put("log", JSONObject().put("loglevel", "warning"))
+    fun forVpn(p: Profile, logLevel: String = "info"): String = JSONObject().apply {
+        put("log", JSONObject().apply {
+            put("loglevel", logLevel)
+            // Журнал посещённых адресов — только в подробном режиме
+            if (logLevel != "debug") put("access", "none")
+            put("dnsLog", logLevel == "debug")
+        })
         put("inbounds", JSONArray().put(JSONObject().apply {
             put("tag", "tun")
             put("protocol", "tun")

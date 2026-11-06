@@ -1,6 +1,7 @@
 package com.mkred.xrayclient.data
 
 import com.mkred.xrayclient.core.LinkParser
+import com.mkred.xrayclient.log.AppLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
@@ -8,6 +9,7 @@ import java.net.URL
 import java.util.UUID
 
 object Subscriptions {
+    private const val TAG = "Subs"
 
     /** Добавить подписку и сразу скачать серверы. */
     suspend fun add(url: String, name: String?): Result<Int> {
@@ -37,6 +39,7 @@ object Subscriptions {
         return runCatching {
             val (body, info) = download(sub.url)
             val parsed = LinkParser.parseMany(body)
+            AppLog.i(TAG, "«${sub.name}»: получено ${body.length} байт, распознано серверов ${parsed.size}")
             check(parsed.isNotEmpty()) { "В подписке нет поддерживаемых серверов" }
             AppStore.update { d ->
                 d.copy(
@@ -49,6 +52,7 @@ object Subscriptions {
             }
             parsed.size
         }.onFailure { e ->
+            AppLog.w(TAG, "«${sub.name}» не обновилась: ${e.message}", e)
             AppStore.update { d ->
                 d.copy(subscriptions = d.subscriptions.map {
                     if (it.id == id) it.copy(lastError = e.message ?: e.javaClass.simpleName) else it
@@ -60,6 +64,7 @@ object Subscriptions {
     /** Добавить одиночную ссылку (vless://… и т.п.) или несколько ссылок построчно. */
     fun addLinks(text: String): Int {
         val parsed = LinkParser.parseMany(text)
+        AppLog.i(TAG, "Добавление ссылок вручную: распознано ${parsed.size}")
         if (parsed.isNotEmpty()) {
             AppStore.update { d -> d.copy(profiles = d.profiles + parsed.map { StoredProfile(it.link, null) }) }
         }
@@ -79,6 +84,7 @@ object Subscriptions {
         }
         try {
             val code = conn.responseCode
+            AppLog.d(TAG, "GET ${conn.url.host}: HTTP $code")
             check(code in 200..299) { "HTTP $code" }
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             body to conn.getHeaderField("subscription-userinfo")?.let(::parseUserInfo)

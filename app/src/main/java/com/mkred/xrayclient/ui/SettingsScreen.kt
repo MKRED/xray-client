@@ -2,6 +2,8 @@ package com.mkred.xrayclient.ui
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -42,6 +44,10 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val update by vm.update.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var testUrl by remember(data.testUrl) { mutableStateOf(data.testUrl) }
+    var showLog by remember { mutableStateOf(false) }
+    val saveLog = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        uri?.let { vm.saveLog(it) }
+    }
 
     Column(
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
@@ -92,6 +98,44 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         }
 
         Panel {
+            Text("Логи", fontWeight = FontWeight.SemiBold)
+            Text(
+                "Приложение, ядро Xray и падения пишутся в один файл. При отправке UUID и ссылки на подписки и серверы скрываются.",
+                fontSize = 12.sp, color = C.Muted,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("warning" to "Ошибки", "info" to "Обычный", "debug" to "Подробный").forEach { (lvl, label) ->
+                    val sel = data.logLevel == lvl
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .height(40.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (sel) C.AccentBg else C.Chip)
+                            .clickable(role = Role.RadioButton) { vm.setLogLevel(lvl) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(label, color = if (sel) C.AccentText else C.Text, fontSize = 13.sp)
+                    }
+                }
+            }
+            if (data.logLevel == "debug") {
+                Text("В подробном режиме в лог попадают адреса сайтов, которые вы открываете.", fontSize = 12.sp, color = C.Warn)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { showLog = true }, modifier = Modifier.weight(1f)) { Text("Открыть", color = C.Text) }
+                OutlinedButton(onClick = { vm.shareLog() }, modifier = Modifier.weight(1f)) { Text("Отправить", color = C.Text) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { saveLog.launch("xray-client-log.txt") },
+                    modifier = Modifier.weight(1f),
+                ) { Text("В файл", color = C.Text) }
+                OutlinedButton(onClick = { vm.clearLog() }, modifier = Modifier.weight(1f)) { Text("Очистить", color = C.Muted) }
+            }
+        }
+
+        Panel {
             Text("О приложении", fontWeight = FontWeight.SemiBold)
             Text("Версия ${BuildConfig.VERSION_NAME}", fontSize = 13.sp, color = C.Muted)
             Text(remember { XrayCore.version() }, fontSize = 12.sp, color = C.Muted)
@@ -103,4 +147,6 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         }
         Box(Modifier.height(8.dp))
     }
+
+    if (showLog) LogViewer(vm, onClose = { showLog = false })
 }

@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.mkred.xrayclient.BuildConfig
+import com.mkred.xrayclient.log.AppLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -32,8 +33,9 @@ object Updater {
                 .firstOrNull { it.getString("name").endsWith(".apk") }
                 ?: error("В релизе $tag нет APK")
             val release = Release(code, tag, apk.getString("browser_download_url"), o.optString("body"))
+            AppLog.i("Update", "Последний релиз $tag, установлена сборка ${BuildConfig.VERSION_CODE}")
             release.takeIf { it.versionCode > BuildConfig.VERSION_CODE }
-        }
+        }.onFailure { AppLog.w("Update", "Проверка обновлений: ${it.message}") }
     }
 
     /** Скачать APK и открыть системный установщик. */
@@ -65,8 +67,9 @@ object Updater {
                 } finally {
                     conn.disconnect()
                 }
+                AppLog.i("Update", "Скачан ${release.tag}: ${file.length()} байт")
                 withContext(Dispatchers.Main) { install(context, file) }
-            }
+            }.onFailure { AppLog.w("Update", "Обновление: ${it.message}") }
         }
 
     private fun install(context: Context, file: File) {

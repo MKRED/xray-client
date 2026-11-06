@@ -1,17 +1,23 @@
 package com.mkred.xrayclient.ui
 
 import android.app.Application
+import android.content.Intent
+import android.net.Uri
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mkred.xrayclient.core.XrayCore
 import com.mkred.xrayclient.data.AppStore
 import com.mkred.xrayclient.data.SelectionMode
 import com.mkred.xrayclient.data.Subscriptions
+import com.mkred.xrayclient.log.AppLog
 import com.mkred.xrayclient.service.VpnStateHolder
 import com.mkred.xrayclient.service.XrayVpnService
 import com.mkred.xrayclient.update.Updater
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     val data = AppStore.data
@@ -33,6 +39,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     fun setMode(mode: SelectionMode) {
+        AppLog.i("Settings", "Режим выбора: $mode")
         AppStore.update { it.copy(mode = mode) }
         XrayVpnService.reselect(app)
     }
@@ -100,6 +107,44 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
                 if (!silent && it == null) message.value = "У вас последняя версия"
             }
             .onFailure { if (!silent) message.value = "Не удалось проверить: ${it.message}" }
+    }
+
+    // ---- логи ----
+
+    fun setLogLevel(level: String) {
+        AppStore.update { it.copy(logLevel = level) }
+        AppLog.i("Settings", "Уровень лога: $level (для ядра применится при следующем подключении)")
+    }
+
+    suspend fun logTail(): List<String> = withContext(Dispatchers.IO) { AppLog.tail() }
+
+    /** Открыть системное меню «Поделиться» с файлом лога. */
+    fun shareLog() = viewModelScope.launch {
+        val file = withContext(Dispatchers.IO) { AppLog.export(app) }
+        val uri = FileProvider.getUriForFile(app, "${app.packageName}.files", file)
+        val send = Intent(Intent.ACTION_SEND)
+            .setType("text/plain")
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .putExtra(Intent.EXTRA_SUBJECT, file.name)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        app.startActivity(Intent.createChooser(send, "Отправить лог").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    /** Сохранить лог в файл, выбранный пользователем (Загрузки и т.п.). */
+    fun saveLog(target: Uri) = viewModelScope.launch {
+        runCatching {
+            withContext(Dispatchers.IO) {
+                val file = AppLog.export(app)
+                app.contentResolver.openOutputStream(target)!!.use { out -> file.inputStream().use { it.copyTo(out) } }
+            }
+        }
+            .onSuccess { message.value = "Лог сохранён" }
+            .onFailure { message.value = "Не удалось сохранить: ${it.message}" }
+    }
+
+    fun clearLog() = viewModelScope.launch(Dispatchers.IO) {
+        AppLog.clear()
+        message.value = "Лог очищен"
     }
 
     fun installUpdate() = viewModelScope.launch {
