@@ -3,6 +3,7 @@ package com.mkred.xrayclient
 import android.app.Application
 import com.mkred.xrayclient.core.XrayCore
 import com.mkred.xrayclient.data.AppStore
+import com.mkred.xrayclient.data.Stats
 import com.mkred.xrayclient.log.AppLog
 import com.mkred.xrayclient.service.QsTileService
 import com.mkred.xrayclient.service.VpnStateHolder
@@ -17,6 +18,7 @@ class App : Application() {
         super.onCreate()
         AppLog.init(this)
         AppStore.init(this)
+        Stats.init(this)
         XrayCore.init(this)
 
         // Плитка в шторке обновляется при любом изменении состояния VPN

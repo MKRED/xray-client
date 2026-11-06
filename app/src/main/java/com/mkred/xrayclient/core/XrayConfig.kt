@@ -44,9 +44,17 @@ object XrayConfig {
                 })
             })
         })
-        put("policy", JSONObject().put("levels", JSONObject().put("8", JSONObject().apply {
-            put("handshake", 4); put("connIdle", 300); put("uplinkOnly", 1); put("downlinkOnly", 1)
-        })))
+        // Счётчики трафика по исходящим — для статистики
+        put("stats", JSONObject())
+        put("policy", JSONObject().apply {
+            put("levels", JSONObject().put("8", JSONObject().apply {
+                put("handshake", 4); put("connIdle", 300); put("uplinkOnly", 1); put("downlinkOnly", 1)
+            }))
+            put("system", JSONObject().apply {
+                put("statsOutboundUplink", true)
+                put("statsOutboundDownlink", true)
+            })
+        })
     }.toString()
 
     /** Минимальный конфиг для проверки задержки: только исходящий прокси. */

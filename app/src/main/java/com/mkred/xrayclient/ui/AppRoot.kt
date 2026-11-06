@@ -18,6 +18,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 private data class Tab(val title: String, val icon: ImageVector)
@@ -26,6 +27,7 @@ private val tabs = listOf(
     Tab("Главная", Icons.Power),
     Tab("Серверы", Icons.Servers),
     Tab("Подписки", Icons.Link),
+    Tab("Статистика", Icons.Chart),
     Tab("Настройки", Icons.Settings),
 )
 
@@ -52,7 +54,7 @@ fun AppRoot(vm: MainViewModel, onToggleVpn: () -> Unit) {
                         selected = tab == i,
                         onClick = { tab = i },
                         icon = { Icon(t.icon, contentDescription = null) },
-                        label = { Text(t.title) },
+                        label = { Text(t.title, maxLines = 1, softWrap = false, fontSize = 11.sp) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = C.AccentText,
                             selectedTextColor = C.AccentText,
@@ -70,6 +72,7 @@ fun AppRoot(vm: MainViewModel, onToggleVpn: () -> Unit) {
             0 -> HomeScreen(vm, onToggleVpn, onOpenServers = { tab = 1 }, modifier = m)
             1 -> ServersScreen(vm, m)
             2 -> SubscriptionsScreen(vm, m)
+            3 -> StatsScreen(vm, m)
             else -> SettingsScreen(vm, m)
         }
     }

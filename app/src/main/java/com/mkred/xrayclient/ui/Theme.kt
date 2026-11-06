@@ -75,6 +75,7 @@ object Icons {
     val Down = icon("down", "M6 9l6 6l6 -6")
     val Plus = icon("plus", "M12 5v14", "M5 12h14")
     val Close = icon("close", "M6 6l12 12", "M18 6l-12 12")
+    val Chart = icon("chart", "M4 20v-8", "M10 20v-14", "M16 20v-5", "M22 20v-11", "M2 20h20")
     val Chevron = icon("chevron", "M9 6l6 6l-6 6")
 
     private fun icon(name: String, vararg paths: String): ImageVector =

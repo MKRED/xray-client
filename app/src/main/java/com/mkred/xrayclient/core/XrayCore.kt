@@ -3,6 +3,7 @@ package com.mkred.xrayclient.core
 import android.content.Context
 import com.mkred.xrayclient.data.AppStore
 import com.mkred.xrayclient.data.Profile
+import com.mkred.xrayclient.data.Stats
 import com.mkred.xrayclient.log.AppLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -46,6 +47,7 @@ object XrayCore {
         runCatching { Libv2ray.measureOutboundDelay(XrayConfig.forTest(p), url) }
             .getOrElse { AppLog.w(TAG, "Проверка «${p.name}»: ${it.message}"); -1L }
             .let { if (it <= 0) -1L else it }
+            .also { Stats.recordPing(p.id, it) }
             .also { AppLog.d(TAG, "Пинг «${p.name}» (${p.address}:${p.port}): ${if (it < 0) "недоступен" else "$it мс"}") }
     }
 

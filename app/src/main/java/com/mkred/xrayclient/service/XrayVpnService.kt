@@ -19,6 +19,9 @@ import com.mkred.xrayclient.data.AppStore
 import com.mkred.xrayclient.data.Profile
 import com.mkred.xrayclient.data.SelectionMode
 import com.mkred.xrayclient.data.SplitMode
+import com.mkred.xrayclient.data.Stats
+import com.mkred.xrayclient.data.SwitchEvent
+import com.mkred.xrayclient.data.SwitchKind
 import com.mkred.xrayclient.log.AppLog
 import com.mkred.xrayclient.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
@@ -72,6 +75,9 @@ class XrayVpnService : VpnService() {
     private var current: Profile? = null
     private var monitor: Job? = null
     private var notifier: Job? = null
+    private var traffic: Job? = null
+    /** Защищает ядро: нельзя читать счётчики, пока оно останавливается. */
+    private val coreLock = Any()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         AppLog.i(TAG, "Команда: ${intent?.action ?: "запуск системой"}")
@@ -80,7 +86,7 @@ class XrayVpnService : VpnService() {
                 scope.launch { shutdown() }
                 return START_NOT_STICKY
             }
-            ACTION_RESELECT -> scope.launch { reselect() }
+            ACTION_RESELECT -> scope.launch { reselect(fromSettings = true) }
             ACTION_RETUNNEL -> scope.launch { retunnel() }
             // ACTION_START, а также запуск системой («Постоянная VPN»)
             else -> {
@@ -98,7 +104,7 @@ class XrayVpnService : VpnService() {
     }
 
     override fun onDestroy() {
-        runCatching { controller?.stopLoop() }
+        stopCore()
         runCatching { tun?.close() }
         scope.cancel()
         VpnStateHolder.set { VpnState(message = it.message) }
@@ -132,6 +138,10 @@ class XrayVpnService : VpnService() {
             fail(VpnStateHolder.state.value.message ?: "Xray не запустился: проверьте сервер")
             return@withLock
         }
+        Stats.startSession()
+        Stats.recordSwitch(
+            SwitchEvent(System.currentTimeMillis(), null, profile.name, SwitchKind.CONNECT, "режим «${modeName(data.mode)}»"),
+        )
         startMonitor()
     }
 
@@ -194,7 +204,7 @@ class XrayVpnService : VpnService() {
         val fresh = runCatching { establish() }
             .onFailure { AppLog.e(TAG, "establish()", it) }
             .getOrNull() ?: return@withLock
-        runCatching { controller?.stopLoop() }
+        stopCore()
         val old = tun
         tun = fresh
         startCore(p)
@@ -206,7 +216,7 @@ class XrayVpnService : VpnService() {
         val c = controller ?: return false
         return try {
             AppLog.i(TAG, "Запуск ядра: «${p.name}» ${p.protocol} ${p.address}:${p.port} ${p.network}/${p.security}")
-            c.startLoop(XrayConfig.forVpn(p, AppStore.data.value.logLevel), fd)
+            synchronized(coreLock) { c.startLoop(XrayConfig.forVpn(p, AppStore.data.value.logLevel), fd) }
             AppLog.i(TAG, "Ядро запущено")
             current = p
             VpnStateHolder.set {
@@ -228,16 +238,73 @@ class XrayVpnService : VpnService() {
     }
 
     /** Переключение на другой сервер без пересоздания VPN-интерфейса. */
-    private fun switchTo(p: Profile) {
-        AppLog.i(TAG, "Переключение: «${current?.name}» → «${p.name}»")
-        runCatching { controller?.stopLoop() }
+    private fun switchTo(p: Profile, kind: SwitchKind, reason: String) {
+        AppLog.i(TAG, "Переключение: «${current?.name}» → «${p.name}» ($reason)")
+        Stats.recordSwitch(SwitchEvent(System.currentTimeMillis(), current?.name, p.name, kind, reason))
+        stopCore()
         if (!startCore(p)) VpnStateHolder.set { it.copy(message = "Не удалось переключиться на ${p.name}") }
     }
 
-    private suspend fun reselect() = lock.withLock {
+    private fun stopCore() = synchronized(coreLock) { runCatching { controller?.stopLoop() } }
+
+    private suspend fun reselect(fromSettings: Boolean = false) = lock.withLock {
         if (tun == null) return@withLock
-        val next = ServerSelector.pick(current) ?: return@withLock
-        if (next.id != current?.id) switchTo(next)
+        val prev = current
+        val next = ServerSelector.pick(prev) ?: return@withLock
+        if (next.id == prev?.id) return@withLock
+
+        val data = AppStore.data.value
+        val delays = AppStore.delays.value
+        val prevDelay = prev?.let { delays[it.id] }
+        val (kind, reason) = when {
+            fromSettings -> SwitchKind.SETTINGS to "изменены настройки"
+            data.mode == SelectionMode.PRIORITY -> {
+                val order = AppStore.orderedProfiles().map { it.id }
+                val prevIdx = prev?.let { order.indexOf(it.id) } ?: -1
+                if (prevIdx >= 0 && order.indexOf(next.id) < prevIdx) SwitchKind.PRIORITY to "выше по приоритету"
+                else SwitchKind.FAIL to "не отвечал"
+            }
+            prevDelay == null || prevDelay <= 0 -> SwitchKind.FAIL to "не отвечал"
+            else -> SwitchKind.FASTER to "быстрее на ${prevDelay - (delays[next.id] ?: prevDelay)} мс"
+        }
+        switchTo(next, kind, reason)
+    }
+
+    /** Раз в секунду забираем счётчики трафика прокси из ядра. */
+    private fun startTraffic() {
+        traffic?.cancel()
+        traffic = scope.launch {
+            var lastSave = System.currentTimeMillis()
+            while (isActive) {
+                delay(1000)
+                val (down, up) = queryTraffic()
+                Stats.addTraffic(down, up)
+                if (System.currentTimeMillis() - lastSave > 60_000) {
+                    Stats.save()
+                    lastSave = System.currentTimeMillis()
+                }
+            }
+        }
+    }
+
+    private fun queryTraffic(): Pair<Long, Long> = synchronized(coreLock) {
+        val c = controller ?: return 0L to 0L
+        if (!c.isRunning) return 0L to 0L
+        var down = 0L
+        var up = 0L
+        runCatching { c.queryAllOutboundTrafficStats() }.getOrDefault("").split(';').forEach { entry ->
+            val parts = entry.split(',')
+            if (parts.size != 3 || parts[0] != "proxy") return@forEach
+            val v = parts[2].toLongOrNull() ?: return@forEach
+            if (parts[1] == "downlink") down += v else if (parts[1] == "uplink") up += v
+        }
+        down to up
+    }
+
+    private fun modeName(m: SelectionMode) = when (m) {
+        SelectionMode.FASTEST -> "Быстрый"
+        SelectionMode.PRIORITY -> "По приоритету"
+        SelectionMode.MANUAL -> "Вручную"
     }
 
     /** Периодическая проверка: переключаемся, если текущий упал или нашёлся лучше. */
@@ -255,11 +322,16 @@ class XrayVpnService : VpnService() {
 
     private fun startMonitor() {
         startNotifier()
+        startTraffic()
         monitor?.cancel()
         monitor = scope.launch {
             while (isActive) {
                 delay(AppStore.data.value.checkIntervalSec.coerceAtLeast(10) * 1000L)
-                if (AppStore.data.value.mode == SelectionMode.MANUAL) continue
+                if (AppStore.data.value.mode == SelectionMode.MANUAL) {
+                    // Переключаться не нужно, но пинг текущего сервера пишем в статистику
+                    current?.let { p -> AppStore.setDelay(p.id, XrayCore.measure(p, AppStore.data.value.testUrl)) }
+                    continue
+                }
                 runCatching { reselect() }.onFailure { AppLog.w(TAG, "Ошибка фоновой проверки", it) }
             }
         }
@@ -275,7 +347,9 @@ class XrayVpnService : VpnService() {
         AppLog.i(TAG, "Отключение")
         monitor?.cancel()
         notifier?.cancel()
-        runCatching { controller?.stopLoop() }
+        traffic?.cancel()
+        stopCore()
+        Stats.save()
         runCatching { tun?.close() }
         tun = null
         controller = null
