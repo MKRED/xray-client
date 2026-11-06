@@ -137,6 +137,8 @@ object AppStore {
         put("testUrl", d.testUrl)
         put("checkIntervalSec", d.checkIntervalSec)
         put("logLevel", d.logLevel)
+        put("splitMode", d.splitMode.name)
+        put("splitApps", JSONArray(d.splitApps.toList()))
     }
 
     private fun fromJson(o: JSONObject): AppData {
@@ -167,6 +169,8 @@ object AppStore {
             testUrl = o.optString("testUrl").ifEmpty { defaults.testUrl },
             checkIntervalSec = o.optInt("checkIntervalSec", defaults.checkIntervalSec),
             logLevel = o.optString("logLevel").ifEmpty { defaults.logLevel },
+            splitMode = runCatching { SplitMode.valueOf(o.optString("splitMode")) }.getOrDefault(defaults.splitMode),
+            splitApps = o.optJSONArray("splitApps").strings().toSet(),
         )
     }
 

@@ -91,12 +91,7 @@ fun HomeScreen(vm: MainViewModel, onToggle: () -> Unit, onOpenServers: () -> Uni
         update?.let { r ->
             Panel {
                 Text("Доступно обновление ${r.tag}", fontWeight = FontWeight.SemiBold)
-                val p = progress
-                if (p != null) {
-                    LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth())
-                } else {
-                    Button(onClick = { vm.installUpdate() }) { Text("Обновить") }
-                }
+                UpdateAction(progress, onInstall = { vm.installUpdate() })
             }
         }
 
@@ -231,6 +226,30 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
         shape = RoundedCornerShape(14.dp),
         colors = ButtonDefaults.buttonColors(containerColor = C.Accent, contentColor = C.Bg),
     ) { Text(text, fontWeight = FontWeight.SemiBold) }
+}
+
+/** Кнопка «Обновить» или, пока идёт загрузка, полоса с процентами и мегабайтами. */
+@Composable
+fun UpdateAction(progress: com.mkred.xrayclient.update.Updater.Progress?, onInstall: () -> Unit) {
+    if (progress == null) {
+        PrimaryButton("Скачать и установить", onClick = onInstall, modifier = Modifier.fillMaxWidth())
+        return
+    }
+    val f = progress.fraction
+    if (f != null) {
+        LinearProgressIndicator(progress = { f }, modifier = Modifier.fillMaxWidth(), color = C.Accent, trackColor = C.Border)
+    } else {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = C.Accent, trackColor = C.Border)
+    }
+    val mb = { b: Long -> "%.1f".format(b / 1_048_576.0) }
+    Text(
+        when {
+            f != null && f >= 1f -> "Скачано, открываю установщик…"
+            f != null -> "Скачивание: ${(f * 100).toInt()}% · ${mb(progress.done)} из ${mb(progress.total)} МБ"
+            else -> "Скачивание: ${mb(progress.done)} МБ"
+        },
+        fontSize = 12.sp, color = C.Muted,
+    )
 }
 
 fun modeLabel(mode: SelectionMode) = when (mode) {

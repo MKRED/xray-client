@@ -4,6 +4,18 @@ import java.security.MessageDigest
 
 enum class Protocol { VLESS, VMESS, TROJAN, SHADOWSOCKS }
 
+/** Раздельное туннелирование. */
+enum class SplitMode {
+    /** Через VPN идут все приложения. */
+    ALL,
+
+    /** Через VPN идут только выбранные. */
+    ONLY_SELECTED,
+
+    /** Через VPN идут все, кроме выбранных. */
+    BYPASS_SELECTED,
+}
+
 /** Как выбирать сервер при подключении и во время работы. */
 enum class SelectionMode {
     /** Самый быстрый из рабочих. */
@@ -105,6 +117,9 @@ data class AppData(
     val checkIntervalSec: Int = 30,
     /** Вручную выключенные серверы (id профилей). Сохраняются при обновлении подписки. */
     val excluded: Set<String> = emptySet(),
+    val splitMode: SplitMode = SplitMode.ALL,
+    /** Пакеты приложений для раздельного туннелирования. */
+    val splitApps: Set<String> = emptySet(),
     /** Подробность лога ядра Xray: warning, info или debug. */
     val logLevel: String = "info",
 )

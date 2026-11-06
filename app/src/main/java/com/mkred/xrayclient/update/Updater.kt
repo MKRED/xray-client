@@ -20,6 +20,11 @@ import java.net.URL
  */
 object Updater {
 
+    /** Ход загрузки: сколько скачано и сколько всего (-1, если сервер не сообщил размер). */
+    data class Progress(val done: Long, val total: Long) {
+        val fraction: Float? get() = if (total > 0) (done.toFloat() / total).coerceIn(0f, 1f) else null
+    }
+
     data class Release(val versionCode: Int, val tag: String, val apkUrl: String, val notes: String)
 
     suspend fun checkLatest(): Result<Release?> = withContext(Dispatchers.IO) {
@@ -39,7 +44,7 @@ object Updater {
     }
 
     /** Скачать APK и открыть системный установщик. */
-    suspend fun downloadAndInstall(context: Context, release: Release, onProgress: (Float) -> Unit): Result<Unit> =
+    suspend fun downloadAndInstall(context: Context, release: Release, onProgress: (Progress) -> Unit): Result<Unit> =
         withContext(Dispatchers.IO) {
             runCatching {
                 val dir = File(context.cacheDir, "updates").apply { mkdirs() }
@@ -51,6 +56,8 @@ object Updater {
                 try {
                     check(conn.responseCode in 200..299) { "HTTP ${conn.responseCode}" }
                     val total = conn.contentLengthLong
+                    onProgress(Progress(0, total))
+                    var lastReport = 0L
                     conn.inputStream.use { input ->
                         file.outputStream().use { out ->
                             val buf = ByteArray(64 * 1024)
@@ -60,13 +67,18 @@ object Updater {
                                 if (n < 0) break
                                 out.write(buf, 0, n)
                                 done += n
-                                if (total > 0) onProgress(done.toFloat() / total)
+                                // Не чаще чем раз в 64 КБ×4, чтобы не дёргать интерфейс
+                                if (done - lastReport >= 256 * 1024) {
+                                    lastReport = done
+                                    onProgress(Progress(done, total))
+                                }
                             }
                         }
                     }
                 } finally {
                     conn.disconnect()
                 }
+                onProgress(Progress(file.length(), file.length()))
                 AppLog.i("Update", "Скачан ${release.tag}: ${file.length()} байт")
                 withContext(Dispatchers.Main) { install(context, file) }
             }.onFailure { AppLog.w("Update", "Обновление: ${it.message}") }

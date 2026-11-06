@@ -18,6 +18,7 @@ import com.mkred.xrayclient.core.XrayCore
 import com.mkred.xrayclient.data.AppStore
 import com.mkred.xrayclient.data.Profile
 import com.mkred.xrayclient.data.SelectionMode
+import com.mkred.xrayclient.data.SplitMode
 import com.mkred.xrayclient.log.AppLog
 import com.mkred.xrayclient.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
@@ -39,6 +40,7 @@ class XrayVpnService : VpnService() {
         private const val ACTION_START = "start"
         private const val ACTION_STOP = "stop"
         private const val ACTION_RESELECT = "reselect"
+        private const val ACTION_RETUNNEL = "retunnel"
         private const val CHANNEL = "vpn"
         private const val NOTIFICATION_ID = 1
 
@@ -48,6 +50,11 @@ class XrayVpnService : VpnService() {
         /** Пересобрать выбор сервера сейчас (например, после смены режима). */
         fun reselect(ctx: Context) {
             if (VpnStateHolder.state.value.status != VpnStatus.DISCONNECTED) send(ctx, ACTION_RESELECT)
+        }
+
+        /** Пересоздать VPN-интерфейс (после смены списка приложений), не отключаясь. */
+        fun retunnel(ctx: Context) {
+            if (VpnStateHolder.state.value.status == VpnStatus.CONNECTED) send(ctx, ACTION_RETUNNEL)
         }
 
         private fun send(ctx: Context, action: String) {
@@ -71,6 +78,7 @@ class XrayVpnService : VpnService() {
                 return START_NOT_STICKY
             }
             ACTION_RESELECT -> scope.launch { reselect() }
+            ACTION_RETUNNEL -> scope.launch { retunnel() }
             // ACTION_START, а также запуск системой («Постоянная VPN»)
             else -> {
                 startForegroundCompat(getString(R.string.app_name), "Подключение…")
@@ -133,10 +141,62 @@ class XrayVpnService : VpnService() {
         .addRoute("::", 0)
         .addDnsServer("1.1.1.1")
         .addDnsServer("8.8.8.8")
-        // Само приложение (и ядро Xray внутри него) идёт мимо туннеля, иначе будет петля
-        .addDisallowedApplication(packageName)
+        .applySplitTunneling()
         .apply { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) setMetered(false) }
         .establish()
+
+    /**
+     * Какие приложения идут через VPN. Само приложение (и ядро Xray внутри него)
+     * всегда идёт мимо туннеля, иначе трафик ядра зациклится.
+     * Android не позволяет смешивать allowed и disallowed в одном интерфейсе.
+     */
+    private fun Builder.applySplitTunneling(): Builder {
+        val d = AppStore.data.value
+        val apps = d.splitApps - packageName
+        when (d.splitMode) {
+            SplitMode.ONLY_SELECTED -> {
+                var added = 0
+                apps.forEach { pkg ->
+                    runCatching { addAllowedApplication(pkg); added++ }
+                        .onFailure { AppLog.w(TAG, "Приложение не найдено: $pkg") }
+                }
+                if (added == 0) {
+                    AppLog.w(TAG, "Список «только выбранные» пуст — через VPN пойдут все приложения")
+                    addDisallowedApplication(packageName)
+                } else {
+                    AppLog.i(TAG, "Через VPN только выбранные приложения: $added")
+                }
+            }
+            SplitMode.BYPASS_SELECTED -> {
+                addDisallowedApplication(packageName)
+                var added = 0
+                apps.forEach { pkg ->
+                    runCatching { addDisallowedApplication(pkg); added++ }
+                        .onFailure { AppLog.w(TAG, "Приложение не найдено: $pkg") }
+                }
+                AppLog.i(TAG, "Мимо VPN приложений: $added")
+            }
+            SplitMode.ALL -> {
+                addDisallowedApplication(packageName)
+                AppLog.i(TAG, "Через VPN все приложения")
+            }
+        }
+        return this
+    }
+
+    /** Новый интерфейс с текущими настройками приложений; ядро перезапускается на том же сервере. */
+    private suspend fun retunnel() = lock.withLock {
+        val p = current ?: return@withLock
+        AppLog.i(TAG, "Пересоздание VPN-интерфейса (изменились приложения)")
+        val fresh = runCatching { establish() }
+            .onFailure { AppLog.e(TAG, "establish()", it) }
+            .getOrNull() ?: return@withLock
+        runCatching { controller?.stopLoop() }
+        val old = tun
+        tun = fresh
+        startCore(p)
+        runCatching { old?.close() }
+    }
 
     private fun startCore(p: Profile): Boolean {
         val fd = tun?.fd ?: return false

@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.mkred.xrayclient.core.XrayCore
 import com.mkred.xrayclient.data.AppStore
 import com.mkred.xrayclient.data.SelectionMode
+import com.mkred.xrayclient.data.SplitMode
 import com.mkred.xrayclient.data.Subscriptions
 import com.mkred.xrayclient.log.AppLog
 import com.mkred.xrayclient.service.VpnStateHolder
@@ -30,7 +31,8 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     val busy = MutableStateFlow(false)
     val message = MutableStateFlow<String?>(null)
     val update = MutableStateFlow<Updater.Release?>(null)
-    val updateProgress = MutableStateFlow<Float?>(null)
+    val updateProgress = MutableStateFlow<Updater.Progress?>(null)
+    val checkingUpdate = MutableStateFlow(false)
 
     init {
         checkUpdate(silent = true)
@@ -115,12 +117,30 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     fun removeProfile(id: String) = Subscriptions.removeProfile(id)
 
     fun checkUpdate(silent: Boolean = false) = viewModelScope.launch {
+        checkingUpdate.value = true
         Updater.checkLatest()
+            .also { checkingUpdate.value = false }
             .onSuccess {
                 update.value = it
                 if (!silent && it == null) message.value = "У вас последняя версия"
             }
             .onFailure { if (!silent) message.value = "Не удалось проверить: ${it.message}" }
+    }
+
+    // ---- раздельное туннелирование ----
+
+    fun setSplitMode(mode: SplitMode) {
+        if (data.value.splitMode == mode) return
+        AppLog.i("Settings", "Раздельное туннелирование: $mode")
+        AppStore.update { it.copy(splitMode = mode) }
+        XrayVpnService.retunnel(app)
+    }
+
+    fun setSplitApps(apps: Set<String>) {
+        if (data.value.splitApps == apps) return
+        AppLog.i("Settings", "Приложений в списке: ${apps.size}")
+        AppStore.update { it.copy(splitApps = apps) }
+        if (data.value.splitMode != SplitMode.ALL) XrayVpnService.retunnel(app)
     }
 
     // ---- логи ----
@@ -163,7 +183,8 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun installUpdate() = viewModelScope.launch {
         val r = update.value ?: return@launch
-        updateProgress.value = 0f
+        if (updateProgress.value != null) return@launch
+        updateProgress.value = Updater.Progress(0, -1)
         Updater.downloadAndInstall(app, r) { updateProgress.value = it }
             .onFailure { message.value = it.message }
         updateProgress.value = null

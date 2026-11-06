@@ -36,15 +36,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mkred.xrayclient.BuildConfig
+import com.mkred.xrayclient.data.SplitMode
 import com.mkred.xrayclient.core.XrayCore
 
 @Composable
 fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val data by vm.data.collectAsStateWithLifecycle()
     val update by vm.update.collectAsStateWithLifecycle()
+    val progress by vm.updateProgress.collectAsStateWithLifecycle()
+    val checking by vm.checkingUpdate.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var testUrl by remember(data.testUrl) { mutableStateOf(data.testUrl) }
     var showLog by remember { mutableStateOf(false) }
+    var pickApps by remember { mutableStateOf(false) }
     val saveLog = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         uri?.let { vm.saveLog(it) }
     }
@@ -84,6 +88,50 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             if (testUrl != data.testUrl) {
                 TextButton(onClick = { vm.setTestUrl(testUrl) }) { Text("Сохранить", color = C.AccentText) }
             }
+        }
+
+        Panel {
+            Text("Приложения через VPN", fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    SplitMode.ALL to "Все",
+                    SplitMode.ONLY_SELECTED to "Только выбранные",
+                    SplitMode.BYPASS_SELECTED to "Кроме выбранных",
+                ).forEach { (m, label) ->
+                    val sel = data.splitMode == m
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (sel) C.AccentBg else C.Chip)
+                            .clickable(role = Role.RadioButton) { vm.setSplitMode(m) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            label, color = if (sel) C.AccentText else C.Text, fontSize = 12.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                    }
+                }
+            }
+            Text(
+                when (data.splitMode) {
+                    SplitMode.ALL -> "Весь трафик телефона идёт через VPN."
+                    SplitMode.ONLY_SELECTED ->
+                        if (data.splitApps.isEmpty()) "Выберите приложения — пока список пуст, через VPN идут все."
+                        else "Через VPN идут только выбранные приложения (${data.splitApps.size}), остальные — напрямую."
+                    SplitMode.BYPASS_SELECTED ->
+                        "Выбранные приложения (${data.splitApps.size}) идут напрямую, остальные — через VPN."
+                },
+                fontSize = 12.sp, color = C.Muted,
+            )
+            if (data.splitMode != SplitMode.ALL) {
+                OutlinedButton(onClick = { pickApps = true }) {
+                    Text("Выбрать приложения (${data.splitApps.size})", color = C.Text)
+                }
+            }
+            Text("Изменения применяются сразу, без отключения VPN.", fontSize = 12.sp, color = C.Muted)
         }
 
         Panel {
@@ -139,14 +187,27 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             Text("О приложении", fontWeight = FontWeight.SemiBold)
             Text("Версия ${BuildConfig.VERSION_NAME}", fontSize = 13.sp, color = C.Muted)
             Text(remember { XrayCore.version() }, fontSize = 12.sp, color = C.Muted)
-            if (update != null) {
-                PrimaryButton("Установить ${update!!.tag}", onClick = { vm.installUpdate() })
+            val r = update
+            if (r != null) {
+                Text("Доступна версия ${r.tag}", fontSize = 13.sp, color = C.AccentText)
+                UpdateAction(progress, onInstall = { vm.installUpdate() })
             } else {
-                OutlinedButton(onClick = { vm.checkUpdate() }) { Text("Проверить обновления", color = C.Text) }
+                OutlinedButton(onClick = { vm.checkUpdate() }, enabled = !checking) {
+                    Text(if (checking) "Проверяю…" else "Проверить обновления", color = C.Text)
+                }
             }
         }
         Box(Modifier.height(8.dp))
     }
 
     if (showLog) LogViewer(vm, onClose = { showLog = false })
+
+    if (pickApps) {
+        AppPickerDialog(
+            title = if (data.splitMode == SplitMode.ONLY_SELECTED) "Через VPN" else "Мимо VPN",
+            initial = data.splitApps,
+            onDone = { vm.setSplitApps(it); pickApps = false },
+            onCancel = { pickApps = false },
+        )
+    }
 }
