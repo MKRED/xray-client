@@ -27,6 +27,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -69,6 +71,7 @@ class XrayVpnService : VpnService() {
     private var controller: CoreController? = null
     private var current: Profile? = null
     private var monitor: Job? = null
+    private var notifier: Job? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         AppLog.i(TAG, "Команда: ${intent?.action ?: "запуск системой"}")
@@ -215,7 +218,7 @@ class XrayVpnService : VpnService() {
                     message = null,
                 )
             }
-            updateNotification(p)
+            updateNotification()
             true
         } catch (e: Exception) {
             AppLog.e(TAG, "Ядро не запустилось: ${e.message}", e)
@@ -238,7 +241,20 @@ class XrayVpnService : VpnService() {
     }
 
     /** Периодическая проверка: переключаемся, если текущий упал или нашёлся лучше. */
+    /** Уведомление следит за режимом и пингом текущего сервера. */
+    private fun startNotifier() {
+        notifier?.cancel()
+        notifier = scope.launch {
+            combine(AppStore.data, AppStore.delays, VpnStateHolder.state) { d, delays, st ->
+                Triple(d.mode, st.profileId, st.profileId?.let { delays[it] })
+            }
+                .distinctUntilChanged()
+                .collect { if (current != null) updateNotification() }
+        }
+    }
+
     private fun startMonitor() {
+        startNotifier()
         monitor?.cancel()
         monitor = scope.launch {
             while (isActive) {
@@ -258,6 +274,7 @@ class XrayVpnService : VpnService() {
     private suspend fun shutdown() {
         AppLog.i(TAG, "Отключение")
         monitor?.cancel()
+        notifier?.cancel()
         runCatching { controller?.stopLoop() }
         runCatching { tun?.close() }
         tun = null
@@ -279,9 +296,16 @@ class XrayVpnService : VpnService() {
         }
     }
 
-    private fun updateNotification(p: Profile) {
+    private fun updateNotification() {
+        val p = current ?: return
+        val mode = when (AppStore.data.value.mode) {
+            SelectionMode.FASTEST -> "Быстрый"
+            SelectionMode.PRIORITY -> "По приоритету"
+            SelectionMode.MANUAL -> "Вручную"
+        }
+        val ping = AppStore.delays.value[p.id]?.takeIf { it > 0 }?.let { " · $it мс" }.orEmpty()
         getSystemService(NotificationManager::class.java)
-            .notify(NOTIFICATION_ID, notification("Подключено", p.name))
+            .notify(NOTIFICATION_ID, notification("Подключено · $mode", p.name + ping))
     }
 
     private fun notification(title: String, text: String): Notification {
@@ -299,6 +323,7 @@ class XrayVpnService : VpnService() {
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .addAction(Notification.Action.Builder(null, "Отключить", stop).build())
             .build()
     }
