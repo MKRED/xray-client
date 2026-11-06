@@ -101,7 +101,7 @@ class XrayVpnService : VpnService() {
         VpnStateHolder.set { it.copy(status = VpnStatus.CONNECTING, message = "Выбор сервера…") }
 
         val data = AppStore.data.value
-        AppLog.i(TAG, "Подключение: режим ${data.mode}, серверов ${AppStore.profiles.value.size}")
+        AppLog.i(TAG, "Подключение: режим ${data.mode}, серверов ${AppStore.usable.value.size} из ${AppStore.profiles.value.size}")
         val profile = ServerSelector.pick()
         if (profile == null) {
             fail("Нет серверов — добавьте подписку")

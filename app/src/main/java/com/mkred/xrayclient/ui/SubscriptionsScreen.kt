@@ -38,6 +38,8 @@ fun SubscriptionsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     var addDialog by remember { mutableStateOf(false) }
+    var filterFor by remember { mutableStateOf<String?>(null) }
+    val usable by vm.usable.collectAsStateWithLifecycle()
 
     Column(modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -59,12 +61,13 @@ fun SubscriptionsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             }
             items(data.subscriptions, key = { it.id }) { s ->
                 val count = profiles.count { it.subscriptionId == s.id }
+                val active = usable.count { it.subscriptionId == s.id }
                 Panel {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(s.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
-                                "Серверов: $count · " + if (s.updatedAt > 0) "обновлена ${formatDate(s.updatedAt)}" else "не загружена",
+                                "Серверов: ${if (active == count) "$count" else "$active из $count"} · " + if (s.updatedAt > 0) "обновлена ${formatDate(s.updatedAt)}" else "не загружена",
                                 fontSize = 12.sp, color = C.Muted,
                             )
                         }
@@ -89,11 +92,25 @@ fun SubscriptionsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                         }
                     }
                     s.lastError?.let { Text("Ошибка: $it", fontSize = 12.sp, color = C.Error) }
+                    if (count > 0) {
+                        TextButton(onClick = { filterFor = s.id }) {
+                            Text(
+                                if (active == count) "Исключить серверы" else "Исключения: ${count - active}",
+                                color = C.AccentText,
+                            )
+                        }
+                    }
                 }
             }
             item {
                 PrimaryButton("Добавить подписку", onClick = { addDialog = true }, modifier = Modifier.fillMaxWidth())
             }
+        }
+    }
+
+    filterFor?.let { id ->
+        data.subscriptions.firstOrNull { it.id == id }?.let { sub ->
+            SubscriptionFilterDialog(vm, sub, onClose = { filterFor = null })
         }
     }
 

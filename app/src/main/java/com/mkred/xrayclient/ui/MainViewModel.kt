@@ -22,6 +22,7 @@ import kotlinx.coroutines.withContext
 class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     val data = AppStore.data
     val profiles = AppStore.profiles
+    val usable = AppStore.usable
     val delays = AppStore.delays
     val vpn = VpnStateHolder.state
 
@@ -59,7 +60,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         if (testing.value) return@launch
         testing.value = true
         try {
-            XrayCore.measureAll(profiles.value, data.value.testUrl)
+            XrayCore.measureAll(usable.value, data.value.testUrl)
         } finally {
             testing.value = false
         }
@@ -92,6 +93,19 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     fun removeSubscription(id: String) = Subscriptions.remove(id)
+
+    fun setExcluded(ids: Collection<String>, excluded: Boolean) {
+        AppLog.i("Settings", (if (excluded) "Исключены" else "Включены") + " серверы: ${ids.size}")
+        AppStore.setExcluded(ids, excluded)
+        XrayVpnService.reselect(app)
+    }
+
+    fun setExcludeKeywords(subscriptionId: String, text: String) {
+        val words = text.split(',', '\n')
+        AppLog.i("Settings", "Фильтр подписки $subscriptionId: ${words.map(String::trim).filter(String::isNotEmpty)}")
+        AppStore.setExcludeKeywords(subscriptionId, words)
+        XrayVpnService.reselect(app)
+    }
 
     fun addLinks(text: String) {
         val n = Subscriptions.addLinks(text)

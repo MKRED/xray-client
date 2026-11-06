@@ -45,7 +45,8 @@ import com.mkred.xrayclient.data.SelectionMode
 @Composable
 fun ServersScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val data by vm.data.collectAsStateWithLifecycle()
-    val profiles by vm.profiles.collectAsStateWithLifecycle()
+    val profiles by vm.usable.collectAsStateWithLifecycle()
+    val all by vm.profiles.collectAsStateWithLifecycle()
     val delays by vm.delays.collectAsStateWithLifecycle()
     val vpn by vm.vpn.collectAsStateWithLifecycle()
     val testing by vm.testing.collectAsStateWithLifecycle()
@@ -125,11 +126,28 @@ fun ServersScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                                 Icon(Icons.Down, contentDescription = "Ниже", tint = C.Muted, modifier = Modifier.size(18.dp))
                             }
                         }
-                    } else if (p.subscriptionId == null) {
-                        IconButton(onClick = { vm.removeProfile(p.id) }) {
-                            Icon(Icons.Close, contentDescription = "Удалить", tint = C.Muted, modifier = Modifier.size(18.dp))
+                    } else {
+                        val fromSub = p.subscriptionId != null
+                        IconButton(onClick = {
+                            if (fromSub) vm.setExcluded(listOf(p.id), true) else vm.removeProfile(p.id)
+                        }) {
+                            Icon(
+                                Icons.Close,
+                                contentDescription = if (fromSub) "Исключить" else "Удалить",
+                                tint = C.Muted,
+                                modifier = Modifier.size(18.dp),
+                            )
                         }
                     }
+                }
+            }
+            val hidden = all.size - profiles.size
+            if (hidden > 0) {
+                item {
+                    Text(
+                        "Исключено серверов: $hidden. Вернуть их можно на вкладке «Подписки».",
+                        fontSize = 12.sp, color = C.Muted, modifier = Modifier.padding(vertical = 4.dp),
+                    )
                 }
             }
             item {

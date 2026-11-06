@@ -52,7 +52,7 @@ fun HomeScreen(vm: MainViewModel, onToggle: () -> Unit, onOpenServers: () -> Uni
     val vpn by vm.vpn.collectAsStateWithLifecycle()
     val data by vm.data.collectAsStateWithLifecycle()
     val delays by vm.delays.collectAsStateWithLifecycle()
-    val profiles by vm.profiles.collectAsStateWithLifecycle()
+    val profiles by vm.usable.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     val update by vm.update.collectAsStateWithLifecycle()
     val progress by vm.updateProgress.collectAsStateWithLifecycle()
@@ -62,7 +62,7 @@ fun HomeScreen(vm: MainViewModel, onToggle: () -> Unit, onOpenServers: () -> Uni
 
     // Текущий сервер: при подключении — активный, иначе — что будет выбрано в ручном режиме
     val shown = AppStore.profile(vpn.profileId)
-        ?: AppStore.profile(data.selectedId).takeIf { data.mode == SelectionMode.MANUAL }
+        ?: AppStore.usableProfile(data.selectedId).takeIf { data.mode == SelectionMode.MANUAL }
 
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(on) {

@@ -83,6 +83,8 @@ data class Subscription(
     val updatedAt: Long = 0,
     val info: SubscriptionInfo? = null,
     val lastError: String? = null,
+    /** Серверы, в названии которых есть любое из этих слов, не используются. */
+    val excludeKeywords: List<String> = emptyList(),
 )
 
 data class StoredProfile(
@@ -101,6 +103,8 @@ data class AppData(
     val testUrl: String = "https://www.gstatic.com/generate_204",
     /** Как часто проверять серверы во время работы, секунды. */
     val checkIntervalSec: Int = 30,
+    /** Вручную выключенные серверы (id профилей). Сохраняются при обновлении подписки. */
+    val excluded: Set<String> = emptySet(),
     /** Подробность лога ядра Xray: warning, info или debug. */
     val logLevel: String = "info",
 )

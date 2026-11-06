@@ -33,7 +33,7 @@ object ServerSelector {
         val url = data.testUrl
         return when (data.mode) {
             SelectionMode.MANUAL ->
-                AppStore.profile(data.selectedId) ?: AppStore.orderedProfiles().firstOrNull()
+                AppStore.usableProfile(data.selectedId) ?: AppStore.orderedProfiles().firstOrNull()
 
             SelectionMode.PRIORITY -> {
                 val ordered = AppStore.orderedProfiles()
@@ -42,7 +42,7 @@ object ServerSelector {
             }
 
             SelectionMode.FASTEST -> {
-                val all = AppStore.profiles.value
+                val all = AppStore.usable.value
                 val delays = XrayCore.measureAll(all, url)
                 val best = all.filter { (delays[it.id] ?: -1) > 0 }.minByOrNull { delays.getValue(it.id) }
                 if (best == null || current == null) return best ?: current ?: all.firstOrNull()
