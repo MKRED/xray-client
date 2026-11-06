@@ -102,6 +102,12 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         XrayVpnService.reselect(app)
     }
 
+    fun setSubscriptionEnabled(id: String, enabled: Boolean) {
+        AppLog.i("Settings", "Подписка $id: ${if (enabled) "включена" else "выключена"}")
+        AppStore.setSubscriptionEnabled(id, enabled)
+        XrayVpnService.reselect(app)
+    }
+
     fun setExcludeKeywords(subscriptionId: String, text: String) {
         val words = text.split(',', '\n')
         AppLog.i("Settings", "Фильтр подписки $subscriptionId: ${words.map(String::trim).filter(String::isNotEmpty)}")

@@ -145,7 +145,7 @@ fun ServersScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             if (hidden > 0) {
                 item {
                     Text(
-                        "Исключено серверов: $hidden. Вернуть их можно на вкладке «Подписки».",
+                        "Не используется серверов: $hidden (исключены или подписка выключена). Настроить — на вкладке «Подписки».",
                         fontSize = 12.sp, color = C.Muted, modifier = Modifier.padding(vertical = 4.dp),
                     )
                 }

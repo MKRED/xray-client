@@ -1,6 +1,7 @@
 package com.mkred.xrayclient.ui
 
 import android.Manifest
+import android.content.Intent
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
@@ -14,6 +15,11 @@ import com.mkred.xrayclient.service.VpnStateHolder
 import com.mkred.xrayclient.service.XrayVpnService
 
 class MainActivity : ComponentActivity() {
+
+    companion object {
+        /** Открыто из плитки, когда для подключения нужно сначала выдать разрешение VPN. */
+        const val EXTRA_CONNECT = "connect"
+    }
 
     private val vm: MainViewModel by viewModels()
 
@@ -35,6 +41,19 @@ class MainActivity : ComponentActivity() {
             AppTheme {
                 AppRoot(vm, onToggleVpn = ::toggleVpn)
             }
+        }
+        handleConnectExtra(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleConnectExtra(intent)
+    }
+
+    private fun handleConnectExtra(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_CONNECT, false) == true) {
+            intent.removeExtra(EXTRA_CONNECT)
+            if (VpnStateHolder.state.value.status == VpnStatus.DISCONNECTED) toggleVpn()
         }
     }
 

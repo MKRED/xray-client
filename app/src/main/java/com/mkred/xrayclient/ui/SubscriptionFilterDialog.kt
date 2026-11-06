@@ -56,6 +56,12 @@ fun SubscriptionFilterDialog(vm: MainViewModel, sub: Subscription, onClose: () -
                 TextButton(onClick = onClose) { Text("Готово", color = C.AccentText) }
             }
 
+            if (!sub.enabled) {
+                Text(
+                    "Подписка выключена: серверы ниже сейчас не используются, но настройки сохраняются.",
+                    fontSize = 12.sp, color = C.Warn,
+                )
+            }
             OutlinedTextField(
                 value = words,
                 onValueChange = { words = it },

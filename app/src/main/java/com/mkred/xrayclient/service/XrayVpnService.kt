@@ -294,7 +294,7 @@ class XrayVpnService : VpnService() {
             this, 1, Intent(this, XrayVpnService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE,
         )
         return Notification.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_launcher_fg)
+            .setSmallIcon(R.drawable.ic_tile)
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(open)

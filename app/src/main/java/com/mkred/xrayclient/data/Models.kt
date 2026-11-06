@@ -95,6 +95,8 @@ data class Subscription(
     val updatedAt: Long = 0,
     val info: SubscriptionInfo? = null,
     val lastError: String? = null,
+    /** Выключенная подписка обновляется как обычно, но её серверы не используются. */
+    val enabled: Boolean = true,
     /** Серверы, в названии которых есть любое из этих слов, не используются. */
     val excludeKeywords: List<String> = emptyList(),
 )

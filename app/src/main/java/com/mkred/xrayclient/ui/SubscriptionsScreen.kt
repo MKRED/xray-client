@@ -14,6 +14,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -65,12 +67,21 @@ fun SubscriptionsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 Panel {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(s.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
-                                "Серверов: ${if (active == count) "$count" else "$active из $count"} · " + if (s.updatedAt > 0) "обновлена ${formatDate(s.updatedAt)}" else "не загружена",
+                                s.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis, color = if (s.enabled) C.Text else C.Muted,
+                            )
+                            Text(
+                                (if (!s.enabled) "Выключена · серверов $count · "
+                                else "Серверов: ${if (active == count) "$count" else "$active из $count"} · ") + if (s.updatedAt > 0) "обновлена ${formatDate(s.updatedAt)}" else "не загружена",
                                 fontSize = 12.sp, color = C.Muted,
                             )
                         }
+                        Switch(
+                            checked = s.enabled,
+                            onCheckedChange = { vm.setSubscriptionEnabled(s.id, it) },
+                            colors = SwitchDefaults.colors(checkedTrackColor = C.Accent, checkedThumbColor = C.Bg),
+                        )
                         IconButton(onClick = { vm.refreshSubscription(s.id) }, enabled = !busy) {
                             Icon(Icons.Refresh, contentDescription = "Обновить", tint = C.Text, modifier = Modifier.size(18.dp))
                         }
@@ -95,7 +106,11 @@ fun SubscriptionsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     if (count > 0) {
                         TextButton(onClick = { filterFor = s.id }) {
                             Text(
-                                if (active == count) "Исключить серверы" else "Исключения: ${count - active}",
+                                when {
+                                    !s.enabled -> "Серверы подписки"
+                                    active == count -> "Исключить серверы"
+                                    else -> "Исключения: ${count - active}"
+                                },
                                 color = C.AccentText,
                             )
                         }

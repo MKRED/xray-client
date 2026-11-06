@@ -68,7 +68,9 @@ object AppStore {
     /** Исключён ли сервер: выключен вручную или попал под слово-фильтр своей подписки. */
     fun isExcluded(p: Profile, d: AppData = _data.value): Boolean {
         if (p.id in d.excluded) return true
-        val words = d.subscriptions.firstOrNull { it.id == p.subscriptionId }?.excludeKeywords.orEmpty()
+        val sub = d.subscriptions.firstOrNull { it.id == p.subscriptionId }
+        if (sub != null && !sub.enabled) return true
+        val words = sub?.excludeKeywords.orEmpty()
         return words.any { it.isNotBlank() && p.name.contains(it.trim(), ignoreCase = true) }
     }
 
@@ -79,6 +81,10 @@ object AppStore {
 
     fun setExcluded(ids: Collection<String>, excluded: Boolean) = update { d ->
         d.copy(excluded = if (excluded) d.excluded + ids else d.excluded - ids.toSet())
+    }
+
+    fun setSubscriptionEnabled(id: String, enabled: Boolean) = update { d ->
+        d.copy(subscriptions = d.subscriptions.map { if (it.id == id) it.copy(enabled = enabled) else it })
     }
 
     fun setExcludeKeywords(subscriptionId: String, words: List<String>) = update { d ->
@@ -116,6 +122,7 @@ object AppStore {
                     put("updatedAt", s.updatedAt)
                     s.lastError?.let { put("lastError", it) }
                     put("excludeKeywords", JSONArray(s.excludeKeywords))
+                    put("enabled", s.enabled)
                     s.info?.let { i ->
                         put("info", JSONObject().apply {
                             put("upload", i.upload); put("download", i.download)
@@ -150,6 +157,7 @@ object AppStore {
                 updatedAt = s.optLong("updatedAt"),
                 lastError = s.optString("lastError").ifEmpty { null },
                 excludeKeywords = s.optJSONArray("excludeKeywords").strings(),
+                enabled = s.optBoolean("enabled", true),
                 info = s.optJSONObject("info")?.let { i ->
                     SubscriptionInfo(i.optLong("upload"), i.optLong("download"), i.optLong("total"), i.optLong("expire"))
                 },
