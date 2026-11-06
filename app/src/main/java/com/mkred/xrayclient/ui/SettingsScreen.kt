@@ -1,0 +1,106 @@
+package com.mkred.xrayclient.ui
+
+import android.content.Intent
+import android.provider.Settings
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mkred.xrayclient.BuildConfig
+import com.mkred.xrayclient.core.XrayCore
+
+@Composable
+fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
+    val data by vm.data.collectAsStateWithLifecycle()
+    val update by vm.update.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var testUrl by remember(data.testUrl) { mutableStateOf(data.testUrl) }
+
+    Column(
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Настройки", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 20.dp))
+
+        Panel {
+            Text("Проверка серверов во время работы", fontWeight = FontWeight.SemiBold)
+            Text("Как часто проверять, не пора ли переключиться", fontSize = 12.sp, color = C.Muted)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(15, 30, 60, 120).forEach { sec ->
+                    val sel = data.checkIntervalSec == sec
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .height(40.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (sel) C.AccentBg else C.Chip)
+                            .clickable(role = Role.RadioButton) { vm.setInterval(sec) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("$sec с", color = if (sel) C.AccentText else C.Text, fontSize = 13.sp)
+                    }
+                }
+            }
+            OutlinedTextField(
+                value = testUrl,
+                onValueChange = { testUrl = it },
+                label = { Text("Адрес для проверки") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (testUrl != data.testUrl) {
+                TextButton(onClick = { vm.setTestUrl(testUrl) }) { Text("Сохранить", color = C.AccentText) }
+            }
+        }
+
+        Panel {
+            Text("Постоянная VPN", fontWeight = FontWeight.SemiBold)
+            Text(
+                "Чтобы VPN включался сам и трафик не шёл мимо него, включите в системных настройках «Постоянная VPN» и «Блокировать соединения без VPN».",
+                fontSize = 12.sp, color = C.Muted,
+            )
+            OutlinedButton(onClick = {
+                context.startActivity(Intent(Settings.ACTION_VPN_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }) { Text("Открыть настройки VPN", color = C.Text) }
+        }
+
+        Panel {
+            Text("О приложении", fontWeight = FontWeight.SemiBold)
+            Text("Версия ${BuildConfig.VERSION_NAME}", fontSize = 13.sp, color = C.Muted)
+            Text(remember { XrayCore.version() }, fontSize = 12.sp, color = C.Muted)
+            if (update != null) {
+                PrimaryButton("Установить ${update!!.tag}", onClick = { vm.installUpdate() })
+            } else {
+                OutlinedButton(onClick = { vm.checkUpdate() }) { Text("Проверить обновления", color = C.Text) }
+            }
+        }
+        Box(Modifier.height(8.dp))
+    }
+}
