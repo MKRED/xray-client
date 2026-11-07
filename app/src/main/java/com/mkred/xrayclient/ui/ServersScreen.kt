@@ -39,7 +39,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.mkred.xrayclient.data.AppStore
 import com.mkred.xrayclient.data.SelectionMode
 
 @Composable
@@ -52,8 +51,6 @@ fun ServersScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val testing by vm.testing.collectAsStateWithLifecycle()
     var addDialog by remember { mutableStateOf(false) }
 
-    // Пересчитываем порядок при изменении данных
-    val ordered = remember(data, profiles) { AppStore.orderedProfiles() }
     val priorityMode = data.mode == SelectionMode.PRIORITY
 
     Column(modifier.fillMaxSize().padding(horizontal = 20.dp)) {
@@ -67,7 +64,7 @@ fun ServersScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         ) {
             Text(
                 when (data.mode) {
-                    SelectionMode.PRIORITY -> "Порядок: первый рабочий сверху"
+                    SelectionMode.PRIORITY -> "Первый блок с рабочим сервером, внутри — самый быстрый"
                     SelectionMode.MANUAL -> "Нажмите на сервер, чтобы выбрать"
                     SelectionMode.FASTEST -> "Выбирается самый быстрый"
                 },
@@ -79,11 +76,13 @@ fun ServersScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             }
         }
 
-        LazyColumn(
+        if (priorityMode) {
+            PriorityBlocksList(vm, Modifier.weight(1f))
+        } else LazyColumn(
             Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            itemsIndexed(ordered, key = { _, p -> p.id }) { i, p ->
+            itemsIndexed(profiles, key = { _, p -> p.id }) { _, p ->
                 val active = p.id == vpn.profileId
                 val selected = data.mode == SelectionMode.MANUAL && p.id == data.selectedId
                 val highlight = active || selected
@@ -99,15 +98,6 @@ fun ServersScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    if (priorityMode) {
-                        Box(
-                            Modifier.size(28.dp).clip(RoundedCornerShape(8.dp))
-                                .background(if (active) C.Accent else C.Chip),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text("${i + 1}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = if (active) C.Bg else C.Text)
-                        }
-                    }
                     Column(Modifier.weight(1f)) {
                         Text(p.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
@@ -117,16 +107,7 @@ fun ServersScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     }
                     val d = delays[p.id]
                     Text(delayText(d), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = delayColor(d))
-                    if (priorityMode) {
-                        Column {
-                            IconButton(onClick = { vm.move(p.id, -1) }, enabled = i > 0, modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Up, contentDescription = "Выше", tint = C.Muted, modifier = Modifier.size(18.dp))
-                            }
-                            IconButton(onClick = { vm.move(p.id, 1) }, enabled = i < ordered.lastIndex, modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Down, contentDescription = "Ниже", tint = C.Muted, modifier = Modifier.size(18.dp))
-                            }
-                        }
-                    } else {
+                    run {
                         val fromSub = p.subscriptionId != null
                         IconButton(onClick = {
                             if (fromSub) vm.setExcluded(listOf(p.id), true) else vm.removeProfile(p.id)

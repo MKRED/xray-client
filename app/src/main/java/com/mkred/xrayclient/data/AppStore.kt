@@ -93,23 +93,22 @@ object AppStore {
         })
     }
 
-    /** Рабочие серверы в порядке приоритета: сначала из списка пользователя, затем остальные. */
-    fun orderedProfiles(): List<Profile> {
-        val all = _usable.value
-        val byId = all.associateBy { it.id }
-        val ordered = _data.value.priority.mapNotNull { byId[it] }
-        return ordered + all.filter { it.id !in _data.value.priority }
+    // ---- блоки приоритета ----
+
+    fun saveBlock(b: PriorityBlock) = update { d ->
+        val i = d.blocks.indexOfFirst { it.id == b.id }
+        d.copy(blocks = if (i >= 0) d.blocks.toMutableList().also { it[i] = b } else d.blocks + b)
     }
 
-    /** Сдвинуть сервер в списке приоритета на [delta] позиций (−1 — выше). */
-    fun move(id: String, delta: Int) {
-        val order = orderedProfiles().map { it.id }.toMutableList()
-        val from = order.indexOf(id)
-        if (from < 0) return
-        val to = (from + delta).coerceIn(0, order.lastIndex)
-        order.add(to, order.removeAt(from))
-        // Исключённые сохраняют своё место в списке на случай, если их снова включат
-        update { d -> d.copy(priority = order + d.priority.filter { it !in order }) }
+    fun deleteBlock(id: String) = update { d -> d.copy(blocks = d.blocks.filter { it.id != id }) }
+
+    fun moveBlock(id: String, delta: Int) = update { d ->
+        val list = d.blocks.toMutableList()
+        val from = list.indexOfFirst { it.id == id }
+        if (from < 0) return@update d
+        val to = (from + delta).coerceIn(0, list.lastIndex)
+        list.add(to, list.removeAt(from))
+        d.copy(blocks = list)
     }
 
     // ---- JSON ----
@@ -139,7 +138,19 @@ object AppStore {
         })
         put("mode", d.mode.name)
         d.selectedId?.let { put("selectedId", it) }
-        put("priority", JSONArray(d.priority))
+        put("blocks", JSONArray().apply {
+            d.blocks.forEach { b ->
+                put(JSONObject().apply {
+                    put("id", b.id); put("type", b.type.name)
+                    b.subscriptionId?.let { put("sub", it) }
+                    put("keywords", JSONArray(b.keywords))
+                    b.serverId?.let { put("server", it) }
+                    put("topN", b.topN)
+                    b.maxPingMs?.let { put("maxPing", it) }
+                    put("mobileOnly", b.mobileOnly)
+                })
+            }
+        })
         put("excluded", JSONArray(d.excluded.toList()))
         put("testUrl", d.testUrl)
         put("checkIntervalSec", d.checkIntervalSec)
@@ -172,7 +183,19 @@ object AppStore {
             profiles = profiles,
             mode = runCatching { SelectionMode.valueOf(o.optString("mode")) }.getOrDefault(defaults.mode),
             selectedId = o.optString("selectedId").ifEmpty { null },
-            priority = o.optJSONArray("priority").strings(),
+            blocks = o.optJSONArray("blocks").objects().mapNotNull { b ->
+                val type = runCatching { BlockType.valueOf(b.getString("type")) }.getOrNull() ?: return@mapNotNull null
+                PriorityBlock(
+                    id = b.getString("id"),
+                    type = type,
+                    subscriptionId = b.optString("sub").ifEmpty { null },
+                    keywords = b.optJSONArray("keywords").strings(),
+                    serverId = b.optString("server").ifEmpty { null },
+                    topN = b.optInt("topN", 5),
+                    maxPingMs = if (b.has("maxPing")) b.getInt("maxPing") else null,
+                    mobileOnly = b.optBoolean("mobileOnly"),
+                )
+            },
             excluded = o.optJSONArray("excluded").strings().toSet(),
             testUrl = o.optString("testUrl").ifEmpty { defaults.testUrl },
             checkIntervalSec = o.optInt("checkIntervalSec", defaults.checkIntervalSec),

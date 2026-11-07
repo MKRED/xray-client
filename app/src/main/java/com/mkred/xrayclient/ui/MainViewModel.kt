@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mkred.xrayclient.core.XrayCore
 import com.mkred.xrayclient.data.AppStore
+import com.mkred.xrayclient.data.PriorityBlock
 import com.mkred.xrayclient.data.SelectionMode
 import com.mkred.xrayclient.data.SplitMode
 import com.mkred.xrayclient.data.Subscriptions
@@ -52,7 +53,24 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         XrayVpnService.reselect(app)
     }
 
-    fun move(id: String, delta: Int) = AppStore.move(id, delta)
+    // ---- блоки приоритета ----
+
+    fun saveBlock(b: PriorityBlock) {
+        AppLog.i("Settings", "Блок сохранён: ${b.type} ${b.keywords} sub=${b.subscriptionId} maxPing=${b.maxPingMs} mobile=${b.mobileOnly}")
+        AppStore.saveBlock(b)
+        XrayVpnService.reselect(app)
+    }
+
+    fun deleteBlock(id: String) {
+        AppLog.i("Settings", "Блок удалён")
+        AppStore.deleteBlock(id)
+        XrayVpnService.reselect(app)
+    }
+
+    fun moveBlock(id: String, delta: Int) {
+        AppStore.moveBlock(id, delta)
+        XrayVpnService.reselect(app)
+    }
 
     fun setInterval(sec: Int) = AppStore.update { it.copy(checkIntervalSec = sec) }
 
@@ -63,6 +81,17 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         testing.value = true
         try {
             XrayCore.measureAll(usable.value, data.value.testUrl)
+        } finally {
+            testing.value = false
+        }
+    }
+
+    /** Проверить пинг только у указанных серверов (например, у серверов блока). */
+    fun testProfiles(list: List<com.mkred.xrayclient.data.Profile>) = viewModelScope.launch {
+        if (testing.value || list.isEmpty()) return@launch
+        testing.value = true
+        try {
+            XrayCore.measureAll(list, data.value.testUrl)
         } finally {
             testing.value = false
         }

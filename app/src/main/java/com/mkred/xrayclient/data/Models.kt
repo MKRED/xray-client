@@ -4,6 +4,35 @@ import java.security.MessageDigest
 
 enum class Protocol { VLESS, VMESS, TROJAN, SHADOWSOCKS }
 
+/** Тип блока в режиме «Приоритет». */
+enum class BlockType(val title: String) {
+    SUB_KEYWORDS("Серверы подписки по словам"),
+    SUBSCRIPTION("Вся подписка"),
+    SERVER("Конкретный сервер"),
+    ALL_KEYWORDS("По словам во всех подписках"),
+    MOST_STABLE("Самые стабильные"),
+    MANUAL_SERVERS("Мои серверы"),
+}
+
+/**
+ * Блок приоритета. Блоки проверяются сверху вниз; берётся первый, где есть
+ * рабочий сервер, а внутри блока — сервер с наименьшим пингом.
+ * В конце всегда неявно стоит «Любой рабочий».
+ */
+data class PriorityBlock(
+    val id: String,
+    val type: BlockType,
+    val subscriptionId: String? = null,
+    val keywords: List<String> = emptyList(),
+    val serverId: String? = null,
+    /** Для «Самые стабильные»: сколько лучших серверов брать. */
+    val topN: Int = 5,
+    /** Условие: использовать блок, только если пинг сервера ниже порога. */
+    val maxPingMs: Int? = null,
+    /** Условие: использовать блок только в мобильной сети. */
+    val mobileOnly: Boolean = false,
+)
+
 /** Раздельное туннелирование. */
 enum class SplitMode {
     /** Через VPN идут все приложения. */
@@ -112,8 +141,8 @@ data class AppData(
     val mode: SelectionMode = SelectionMode.FASTEST,
     /** Сервер для ручного режима. */
     val selectedId: String? = null,
-    /** Порядок серверов для режима «Приоритет» (id профилей). */
-    val priority: List<String> = emptyList(),
+    /** Блоки режима «Приоритет» сверху вниз (без закреплённого «Любой рабочий»). */
+    val blocks: List<PriorityBlock> = emptyList(),
     val testUrl: String = "https://www.gstatic.com/generate_204",
     /** Как часто проверять серверы во время работы, секунды. */
     val checkIntervalSec: Int = 30,

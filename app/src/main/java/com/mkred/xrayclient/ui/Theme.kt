@@ -76,6 +76,9 @@ object Icons {
     val Plus = icon("plus", "M12 5v14", "M5 12h14")
     val Close = icon("close", "M6 6l12 12", "M18 6l-12 12")
     val Chart = icon("chart", "M4 20v-8", "M10 20v-14", "M16 20v-5", "M22 20v-11", "M2 20h20")
+    val Filter = icon("filter", "M3 5h18l-7 8v6l-4 -2v-4z")
+    val Target = icon("target", "M4 12a8 8 0 1 0 16 0a8 8 0 1 0 -16 0", "M9 12a3 3 0 1 0 6 0a3 3 0 1 0 -6 0")
+    val Globe = icon("globe", "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0", "M3 12h18", "M12 3a14 14 0 0 1 0 18", "M12 3a14 14 0 0 0 0 18")
     val Chevron = icon("chevron", "M9 6l6 6l-6 6")
 
     private fun icon(name: String, vararg paths: String): ImageVector =

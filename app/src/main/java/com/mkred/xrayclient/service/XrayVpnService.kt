@@ -7,11 +7,15 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.content.ContextCompat
 import com.mkred.xrayclient.R
+import com.mkred.xrayclient.core.NetworkState
 import com.mkred.xrayclient.core.ServerSelector
 import com.mkred.xrayclient.core.XrayConfig
 import com.mkred.xrayclient.core.XrayCore
@@ -76,6 +80,8 @@ class XrayVpnService : VpnService() {
     private var monitor: Job? = null
     private var notifier: Job? = null
     private var traffic: Job? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var lastMobile: Boolean? = null
     /** Защищает ядро: нельзя читать счётчики, пока оно останавливается. */
     private val coreLock = Any()
 
@@ -86,7 +92,7 @@ class XrayVpnService : VpnService() {
                 scope.launch { shutdown() }
                 return START_NOT_STICKY
             }
-            ACTION_RESELECT -> scope.launch { reselect(fromSettings = true) }
+            ACTION_RESELECT -> scope.launch { reselect("изменены настройки") }
             ACTION_RETUNNEL -> scope.launch { retunnel() }
             // ACTION_START, а также запуск системой («Постоянная VPN»)
             else -> {
@@ -104,6 +110,7 @@ class XrayVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        unwatchNetwork()
         stopCore()
         runCatching { tun?.close() }
         scope.cancel()
@@ -119,7 +126,9 @@ class XrayVpnService : VpnService() {
 
         val data = AppStore.data.value
         AppLog.i(TAG, "Подключение: режим ${data.mode}, серверов ${AppStore.usable.value.size} из ${AppStore.profiles.value.size}")
-        val profile = ServerSelector.pick()
+        ServerSelector.reset()
+        val choice = ServerSelector.pick(null)
+        val profile = choice?.profile
         if (profile == null) {
             fail("Нет серверов — добавьте подписку")
             return@withLock
@@ -140,7 +149,10 @@ class XrayVpnService : VpnService() {
         }
         Stats.startSession()
         Stats.recordSwitch(
-            SwitchEvent(System.currentTimeMillis(), null, profile.name, SwitchKind.CONNECT, "режим «${modeName(data.mode)}»"),
+            SwitchEvent(
+                System.currentTimeMillis(), null, profile.name, SwitchKind.CONNECT,
+                "режим «${modeName(data.mode)}» · ${choice.reason}",
+            ),
         )
         startMonitor()
     }
@@ -247,27 +259,16 @@ class XrayVpnService : VpnService() {
 
     private fun stopCore() = synchronized(coreLock) { runCatching { controller?.stopLoop() } }
 
-    private suspend fun reselect(fromSettings: Boolean = false) = lock.withLock {
+    /**
+     * @param cause null — плановая проверка; иначе причина внеплановой (настройки, сеть):
+     *              тогда переключаемся сразу, без ожидания подтверждения.
+     */
+    private suspend fun reselect(cause: String? = null) = lock.withLock {
         if (tun == null) return@withLock
-        val prev = current
-        val next = ServerSelector.pick(prev) ?: return@withLock
-        if (next.id == prev?.id) return@withLock
-
-        val data = AppStore.data.value
-        val delays = AppStore.delays.value
-        val prevDelay = prev?.let { delays[it.id] }
-        val (kind, reason) = when {
-            fromSettings -> SwitchKind.SETTINGS to "изменены настройки"
-            data.mode == SelectionMode.PRIORITY -> {
-                val order = AppStore.orderedProfiles().map { it.id }
-                val prevIdx = prev?.let { order.indexOf(it.id) } ?: -1
-                if (prevIdx >= 0 && order.indexOf(next.id) < prevIdx) SwitchKind.PRIORITY to "выше по приоритету"
-                else SwitchKind.FAIL to "не отвечал"
-            }
-            prevDelay == null || prevDelay <= 0 -> SwitchKind.FAIL to "не отвечал"
-            else -> SwitchKind.FASTER to "быстрее на ${prevDelay - (delays[next.id] ?: prevDelay)} мс"
-        }
-        switchTo(next, kind, reason)
+        val choice = ServerSelector.pick(current, immediate = cause != null) ?: return@withLock
+        if (choice.profile.id == current?.id) return@withLock
+        if (cause != null) switchTo(choice.profile, SwitchKind.SETTINGS, "$cause · ${choice.reason}")
+        else switchTo(choice.profile, choice.kind, choice.reason)
     }
 
     /** Раз в секунду забираем счётчики трафика прокси из ядра. */
@@ -320,9 +321,36 @@ class XrayVpnService : VpnService() {
         }
     }
 
+    /** Следим за сменой Wi-Fi ↔ мобильная сеть: от неё зависят блоки «только в мобильной сети». */
+    private fun watchNetwork() {
+        if (networkCallback != null) return
+        lastMobile = NetworkState.isMobile()
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                val mobile = NetworkState.isMobile()
+                if (mobile == lastMobile) return
+                lastMobile = mobile
+                AppLog.i(TAG, "Сеть: ${if (mobile) "мобильная" else "Wi-Fi/другая"}")
+                val d = AppStore.data.value
+                if (d.mode == SelectionMode.PRIORITY && d.blocks.any { it.mobileOnly }) {
+                    scope.launch { reselect("сменилась сеть") }
+                }
+            }
+        }
+        runCatching { getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(cb) }
+            .onSuccess { networkCallback = cb }
+            .onFailure { AppLog.w(TAG, "Не удалось следить за сетью", it) }
+    }
+
+    private fun unwatchNetwork() {
+        networkCallback?.let { cb -> runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(cb) } }
+        networkCallback = null
+    }
+
     private fun startMonitor() {
         startNotifier()
         startTraffic()
+        watchNetwork()
         monitor?.cancel()
         monitor = scope.launch {
             while (isActive) {
@@ -348,6 +376,7 @@ class XrayVpnService : VpnService() {
         monitor?.cancel()
         notifier?.cancel()
         traffic?.cancel()
+        unwatchNetwork()
         stopCore()
         Stats.save()
         runCatching { tun?.close() }
