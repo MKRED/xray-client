@@ -58,6 +58,7 @@ fun StatsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
     var periodHours by remember { mutableIntStateOf(24) }
     var showAllServers by remember { mutableStateOf(false) }
+    var showAllSwitches by remember { mutableStateOf(false) }
     val connected = vpn.status == VpnStatus.CONNECTED
 
     Column(
@@ -239,9 +240,9 @@ fun StatsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
         // ---- переключения ----
         Panel {
-            CardHeader("Переключения", null)
+            CardHeader("Переключения", if (switches.isNotEmpty()) "всего ${switches.size}" else null)
             if (switches.isEmpty()) Text("Пока не было.", fontSize = 13.sp, color = C.Muted)
-            switches.take(20).forEach { e ->
+            (if (showAllSwitches) switches else switches.take(5)).forEach { e ->
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(formatTime(e.ts), fontSize = 12.sp, color = C.Muted, modifier = Modifier.width(48.dp).padding(top = 2.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -259,6 +260,11 @@ fun StatsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                             modifier = Modifier.clip(RoundedCornerShape(50)).background(bg).padding(horizontal = 8.dp, vertical = 2.dp),
                         )
                     }
+                }
+            }
+            if (switches.size > 5) {
+                TextButton(onClick = { showAllSwitches = !showAllSwitches }) {
+                    Text(if (showAllSwitches) "Свернуть" else "Показать все (${switches.size})", color = C.AccentText)
                 }
             }
         }
