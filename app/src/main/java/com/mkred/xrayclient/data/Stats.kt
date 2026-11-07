@@ -20,6 +20,12 @@ data class PingPoint(val ts: Long, val delay: Long)
 /** Сводка по серверу за один час: сколько проверок прошло и сколько упало. */
 data class PingBucket(val id: String, val hour: Long, val ok: Int, val fail: Int, val sumDelay: Long)
 
+/** Сколько секунд и трафика пришлось на сервер за один час подключения. */
+data class UsageBucket(val id: String, val hour: Long, val seconds: Int, val down: Long, val up: Long)
+
+/** Итог по серверу за период — для «Топ серверов». */
+data class ServerUsage(val id: String, val name: String, val seconds: Long, val traffic: Traffic)
+
 enum class SwitchKind { CONNECT, FAIL, FASTER, PRIORITY, SETTINGS }
 
 data class SwitchEvent(val ts: Long, val from: String?, val to: String, val kind: SwitchKind, val reason: String)
@@ -60,6 +66,12 @@ object Stats {
     private val _buckets = MutableStateFlow<List<PingBucket>>(emptyList())
     val buckets: StateFlow<List<PingBucket>> = _buckets.asStateFlow()
 
+    private val _usage = MutableStateFlow<List<UsageBucket>>(emptyList())
+    val usage: StateFlow<List<UsageBucket>> = _usage.asStateFlow()
+
+    /** Имена серверов на момент подключения — чтобы топ не терял удалённые серверы. */
+    private val names = HashMap<String, String>()
+
     private val _switches = MutableStateFlow<List<SwitchEvent>>(emptyList())
     val switches: StateFlow<List<SwitchEvent>> = _switches.asStateFlow()
 
@@ -78,15 +90,50 @@ object Stats {
         _speed.value = emptyList()
     }
 
-    /** Вызывается раз в секунду: байты через прокси за прошедшую секунду. */
-    fun addTraffic(down: Long, up: Long, ts: Long = System.currentTimeMillis()): Unit = synchronized(lock) {
+    /** Вызывается раз в секунду: байты через прокси за прошедшую секунду и текущий сервер. */
+    fun addTraffic(
+        down: Long, up: Long, serverId: String?, serverName: String?, ts: Long = System.currentTimeMillis(),
+    ): Unit = synchronized(lock) {
         _speed.value = (_speed.value + SpeedSample(ts, down, up)).takeLast(SPEED_POINTS)
+        if (serverId != null) addUsage(serverId, serverName, down, up, ts)
         if (down == 0L && up == 0L) return
         val t = Traffic(down, up)
         _session.value = _session.value + t
         val d = day(ts)
         _daily.value = (_daily.value + (d to ((_daily.value[d] ?: Traffic()) + t)))
             .entries.sortedBy { it.key }.takeLast(TRAFFIC_DAYS).associate { it.key to it.value }
+    }
+
+    private fun addUsage(id: String, name: String?, down: Long, up: Long, ts: Long) {
+        name?.let { names[id] = it }
+        val hour = ts / 3_600_000L * 3_600_000L
+        val all = _usage.value.toMutableList()
+        val i = all.indexOfFirst { it.id == id && it.hour == hour }
+        val old = if (i >= 0) all[i] else UsageBucket(id, hour, 0, 0, 0)
+        val upd = old.copy(seconds = old.seconds + 1, down = old.down + down, up = old.up + up)
+        if (i >= 0) {
+            all[i] = upd
+            _usage.value = all
+        } else {
+            val cutoff = ts - BUCKET_DAYS * 86_400_000L
+            _usage.value = (all + upd).filter { it.hour >= cutoff }
+        }
+    }
+
+    /** Топ серверов по времени подключения с момента [since]. */
+    fun topServers(since: Long, limit: Int = 5): List<ServerUsage> = synchronized(lock) {
+        _usage.value.filter { it.hour >= since }
+            .groupBy { it.id }
+            .map { (id, list) ->
+                ServerUsage(
+                    id = id,
+                    name = names[id] ?: "Удалённый сервер",
+                    seconds = list.sumOf { it.seconds.toLong() },
+                    traffic = Traffic(list.sumOf { it.down }, list.sumOf { it.up }),
+                )
+            }
+            .sortedByDescending { it.seconds }
+            .take(limit)
     }
 
     fun recordPing(id: String, delay: Long, ts: Long = System.currentTimeMillis()): Unit = synchronized(lock) {
@@ -113,6 +160,7 @@ object Stats {
         synchronized(lock) {
             _daily.value = emptyMap(); _pings.value = emptyMap(); _buckets.value = emptyList()
             _switches.value = emptyList(); _session.value = Traffic(); _speed.value = emptyList()
+            _usage.value = emptyList(); names.clear()
         }
         save()
     }
@@ -136,6 +184,10 @@ object Stats {
         put("buckets", JSONArray().apply {
             _buckets.value.forEach { put(JSONArray(listOf(it.id, it.hour, it.ok, it.fail, it.sumDelay))) }
         })
+        put("usage", JSONArray().apply {
+            _usage.value.forEach { put(JSONArray(listOf(it.id, it.hour, it.seconds, it.down, it.up))) }
+        })
+        put("names", JSONObject(names as Map<*, *>))
         put("switches", JSONArray().apply {
             _switches.value.forEach {
                 put(JSONObject().put("ts", it.ts).put("from", it.from ?: "").put("to", it.to)
@@ -162,6 +214,13 @@ object Stats {
                 PingBucket(x.getString(0), x.getLong(1), x.getInt(2), x.getInt(3), x.getLong(4))
             }
         }
+        o.optJSONArray("usage")?.let { a ->
+            _usage.value = (0 until a.length()).map {
+                val x = a.getJSONArray(it)
+                UsageBucket(x.getString(0), x.getLong(1), x.getInt(2), x.getLong(3), x.getLong(4))
+            }
+        }
+        o.optJSONObject("names")?.let { n -> n.keys().forEach { k -> names[k] = n.getString(k) } }
         o.optJSONArray("switches")?.let { a ->
             _switches.value = (0 until a.length()).map {
                 val x = a.getJSONObject(it)

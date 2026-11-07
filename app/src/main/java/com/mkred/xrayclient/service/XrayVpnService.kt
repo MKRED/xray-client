@@ -278,7 +278,7 @@ class XrayVpnService : VpnService() {
             while (isActive) {
                 delay(1000)
                 val (down, up) = queryTraffic()
-                Stats.addTraffic(down, up)
+                Stats.addTraffic(down, up, current?.id, current?.name)
                 if (System.currentTimeMillis() - lastSave > 60_000) {
                     Stats.save()
                     lastSave = System.currentTimeMillis()

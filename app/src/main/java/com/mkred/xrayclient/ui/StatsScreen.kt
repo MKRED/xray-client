@@ -52,6 +52,7 @@ fun StatsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val pings by Stats.pings.collectAsStateWithLifecycle()
     val buckets by Stats.buckets.collectAsStateWithLifecycle()
     val switches by Stats.switches.collectAsStateWithLifecycle()
+    val usage by Stats.usage.collectAsStateWithLifecycle()
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val data by vm.data.collectAsStateWithLifecycle()
 
@@ -116,6 +117,48 @@ fun StatsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                                 .background(if (isToday) C.Accent else C.AccentBorder),
                         )
                         Text(label, fontSize = 11.sp, color = if (isToday) C.Text else C.Muted, modifier = Modifier.padding(top = 4.dp))
+                    }
+                }
+            }
+        }
+
+        // ---- топ серверов по времени подключения ----
+        Panel {
+            val periodLabel = if (periodHours == 24) "24 ч" else "7 дней"
+            CardHeader("Топ серверов за $periodLabel", "время · трафик")
+            val since = System.currentTimeMillis() - periodHours * 3_600_000L
+            val top = remember(usage, periodHours) { Stats.topServers(since, 5) }
+            val totalSec = remember(usage, periodHours) {
+                usage.filter { it.hour >= since }.sumOf { it.seconds.toLong() }.coerceAtLeast(1)
+            }
+            if (top.isEmpty()) {
+                Text("Пока не было подключений за этот период.", fontSize = 13.sp, color = C.Muted)
+            }
+            top.forEachIndexed { i, s ->
+                val share = (s.seconds * 100 / totalSec).toInt()
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(
+                        Modifier.width(26.dp).height(26.dp).clip(RoundedCornerShape(8.dp))
+                            .background(if (i == 0) C.Accent else C.Chip),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("${i + 1}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (i == 0) C.Bg else C.Text)
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row {
+                            Text(s.name, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            Text("$share%", fontSize = 12.sp, color = C.Muted)
+                        }
+                        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(50)).background(C.Border)) {
+                            Box(
+                                Modifier.fillMaxWidth(share / 100f).height(6.dp).clip(RoundedCornerShape(50))
+                                    .background(if (i == 0) C.Accent else C.AccentBorder),
+                            )
+                        }
+                        Text(
+                            "${formatDuration(s.seconds)} · ↓ ${formatBytes(s.traffic.down)} ↑ ${formatBytes(s.traffic.up)}",
+                            fontSize = 12.sp, color = C.Muted,
+                        )
                     }
                 }
             }
@@ -281,6 +324,16 @@ private fun lastDays(n: Int): List<Pair<String, String>> {
         val d = cal.time
         cal.add(Calendar.DAY_OF_YEAR, 1)
         keyFmt.format(d) to dayFmt.format(d).lowercase().take(2)
+    }
+}
+
+private fun formatDuration(sec: Long): String {
+    val h = sec / 3600
+    val m = sec % 3600 / 60
+    return when {
+        h > 0 -> "$h ч $m мин"
+        m > 0 -> "$m мин"
+        else -> "$sec с"
     }
 }
 
