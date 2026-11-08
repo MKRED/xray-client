@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.content.ContextCompat
 import com.mkred.xrayclient.R
+import com.mkred.xrayclient.core.Net
 import com.mkred.xrayclient.core.NetworkState
 import com.mkred.xrayclient.core.ServerSelector
 import com.mkred.xrayclient.core.XrayConfig
@@ -82,6 +83,8 @@ class XrayVpnService : VpnService() {
     private var traffic: Job? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var lastMobile: Boolean? = null
+    /** Порт локального прокси для запросов приложения через туннель. */
+    private var localPort: Int? = null
     /** Защищает ядро: нельзя читать счётчики, пока оно останавливается. */
     private val coreLock = Any()
 
@@ -142,6 +145,7 @@ class XrayVpnService : VpnService() {
         }
         tun = iface
         controller = XrayCore.newController { }
+        localPort = runCatching { Net.freePort() }.getOrNull()
 
         if (!startCore(profile)) {
             fail(VpnStateHolder.state.value.message ?: "Xray не запустился: проверьте сервер")
@@ -228,7 +232,8 @@ class XrayVpnService : VpnService() {
         val c = controller ?: return false
         return try {
             AppLog.i(TAG, "Запуск ядра: «${p.name}» ${p.protocol} ${p.address}:${p.port} ${p.network}/${p.security}")
-            synchronized(coreLock) { c.startLoop(XrayConfig.forVpn(p, AppStore.data.value.logLevel), fd) }
+            synchronized(coreLock) { c.startLoop(XrayConfig.forVpn(p, AppStore.data.value.logLevel, localPort), fd) }
+            Net.proxyPort = localPort
             AppLog.i(TAG, "Ядро запущено")
             current = p
             VpnStateHolder.set {
@@ -257,7 +262,10 @@ class XrayVpnService : VpnService() {
         if (!startCore(p)) VpnStateHolder.set { it.copy(message = "Не удалось переключиться на ${p.name}") }
     }
 
-    private fun stopCore() = synchronized(coreLock) { runCatching { controller?.stopLoop() } }
+    private fun stopCore() = synchronized(coreLock) {
+        Net.proxyPort = null
+        runCatching { controller?.stopLoop() }
+    }
 
     /**
      * @param cause null — плановая проверка; иначе причина внеплановой (настройки, сеть):

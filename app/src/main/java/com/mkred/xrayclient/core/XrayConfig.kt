@@ -11,7 +11,11 @@ object XrayConfig {
     const val MTU = 1500
 
     /** Полный конфиг для работы VPN: TUN-вход → прокси. */
-    fun forVpn(p: Profile, logLevel: String = "info"): String = JSONObject().apply {
+    /**
+     * @param localPort порт локального HTTP-прокси для запросов самого приложения
+     *                  (обновления, подписки): приложение исключено из туннеля.
+     */
+    fun forVpn(p: Profile, logLevel: String = "info", localPort: Int? = null): String = JSONObject().apply {
         put("log", JSONObject().apply {
             put("loglevel", logLevel)
             // Журнал посещённых адресов — только в подробном режиме
@@ -27,7 +31,15 @@ object XrayConfig {
                 put("userLevel", 8)
             })
             put("sniffing", sniffing())
-        }))
+        }).apply {
+            if (localPort != null) put(JSONObject().apply {
+                put("tag", "app-local")
+                put("listen", "127.0.0.1")
+                put("port", localPort)
+                put("protocol", "http")
+                put("settings", JSONObject().put("userLevel", 8))
+            })
+        })
         put("outbounds", JSONArray().apply {
             put(outbound(p))
             put(JSONObject().put("tag", "direct").put("protocol", "freedom"))

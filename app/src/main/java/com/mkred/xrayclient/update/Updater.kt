@@ -6,13 +6,12 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.mkred.xrayclient.BuildConfig
+import com.mkred.xrayclient.core.Net
 import com.mkred.xrayclient.log.AppLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * Обновление из GitHub Releases. CI на каждую сборку публикует релиз
@@ -29,19 +28,39 @@ object Updater {
 
     suspend fun checkLatest(): Result<Release?> = withContext(Dispatchers.IO) {
         runCatching {
-            val json = get("https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/latest")
-            val o = JSONObject(json)
-            val tag = o.getString("tag_name")
-            val code = tag.substringAfterLast('.').toIntOrNull() ?: 0
-            val assets = o.getJSONArray("assets")
-            val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
-                .firstOrNull { it.getString("name").endsWith(".apk") }
-                ?: error("В релизе $tag нет APK")
-            val release = Release(code, tag, apk.getString("browser_download_url"), o.optString("body"))
-            AppLog.i("Update", "Последний релиз $tag, установлена сборка ${BuildConfig.VERSION_CODE}")
+            val release = runCatching { fromApi() }
+                .recoverCatching { e ->
+                    AppLog.w("Update", "API GitHub недоступен (${e.message}), пробую страницу релизов")
+                    fromReleasesPage()
+                }.getOrThrow()
+            AppLog.i("Update", "Последний релиз ${release.tag}, установлена сборка ${BuildConfig.VERSION_CODE}")
             release.takeIf { it.versionCode > BuildConfig.VERSION_CODE }
         }.onFailure { AppLog.w("Update", "Проверка обновлений: ${it.message}") }
     }
+
+    private fun fromApi(): Release {
+        val json = Net.request(
+            "https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/latest",
+            headers = mapOf("Accept" to "application/vnd.github+json"),
+        ) { it.inputStream.bufferedReader().use { r -> r.readText() } }
+        val o = JSONObject(json)
+        val tag = o.getString("tag_name")
+        val assets = o.getJSONArray("assets")
+        val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
+            .firstOrNull { it.getString("name").endsWith(".apk") }
+            ?: error("В релизе $tag нет APK")
+        return Release(codeOf(tag), tag, apk.getString("browser_download_url"), o.optString("body"))
+    }
+
+    /** Запасной путь: github.com/…/releases/latest перенаправляет на страницу последнего тега. */
+    private fun fromReleasesPage(): Release {
+        val repo = BuildConfig.UPDATE_REPO
+        val finalUrl = Net.request("https://github.com/$repo/releases/latest") { it.url.toString() }
+        val tag = finalUrl.substringAfterLast("/tag/", "").ifEmpty { error("Не удалось узнать последнюю версию") }
+        return Release(codeOf(tag), tag, "https://github.com/$repo/releases/download/$tag/xray-client.apk", "")
+    }
+
+    private fun codeOf(tag: String) = tag.substringAfterLast('.').toIntOrNull() ?: 0
 
     /** Скачать APK и открыть системный установщик. */
     suspend fun downloadAndInstall(context: Context, release: Release, onProgress: (Progress) -> Unit): Result<Unit> =
@@ -49,12 +68,7 @@ object Updater {
             runCatching {
                 val dir = File(context.cacheDir, "updates").apply { mkdirs() }
                 val file = File(dir, "update.apk")
-                val conn = URL(release.apkUrl).openConnection() as HttpURLConnection
-                conn.instanceFollowRedirects = true
-                conn.connectTimeout = 15_000
-                conn.readTimeout = 30_000
-                try {
-                    check(conn.responseCode in 200..299) { "HTTP ${conn.responseCode}" }
+                Net.request(release.apkUrl, readTimeout = 30_000) { conn ->
                     val total = conn.contentLengthLong
                     onProgress(Progress(0, total))
                     var lastReport = 0L
@@ -67,7 +81,7 @@ object Updater {
                                 if (n < 0) break
                                 out.write(buf, 0, n)
                                 done += n
-                                // Не чаще чем раз в 64 КБ×4, чтобы не дёргать интерфейс
+                                // Не чаще чем раз в 256 КБ, чтобы не дёргать интерфейс
                                 if (done - lastReport >= 256 * 1024) {
                                     lastReport = done
                                     onProgress(Progress(done, total))
@@ -75,8 +89,6 @@ object Updater {
                             }
                         }
                     }
-                } finally {
-                    conn.disconnect()
                 }
                 onProgress(Progress(file.length(), file.length()))
                 AppLog.i("Update", "Скачан ${release.tag}: ${file.length()} байт")
@@ -99,18 +111,5 @@ object Updater {
                 .setDataAndType(uri, "application/vnd.android.package-archive")
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK),
         )
-    }
-
-    private fun get(url: String): String {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.setRequestProperty("Accept", "application/vnd.github+json")
-        conn.connectTimeout = 15_000
-        conn.readTimeout = 15_000
-        return try {
-            check(conn.responseCode in 200..299) { "HTTP ${conn.responseCode}" }
-            conn.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            conn.disconnect()
-        }
     }
 }

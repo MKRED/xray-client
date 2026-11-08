@@ -1,10 +1,10 @@
 package com.mkred.xrayclient.data
 
 import com.mkred.xrayclient.core.LinkParser
+import com.mkred.xrayclient.core.Net
 import com.mkred.xrayclient.log.AppLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
 
@@ -76,20 +76,10 @@ object Subscriptions {
     }
 
     private suspend fun download(url: String): Pair<String, SubscriptionInfo?> = withContext(Dispatchers.IO) {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 15_000
-            readTimeout = 20_000
-            // Многие панели (Marzban, 3x-ui, Remnawave) отдают нужный формат по User-Agent
-            setRequestProperty("User-Agent", "v2rayNG/2.0")
-        }
-        try {
-            val code = conn.responseCode
-            AppLog.d(TAG, "GET ${conn.url.host}: HTTP $code")
-            check(code in 200..299) { "HTTP $code" }
+        // Многие панели (Marzban, 3x-ui, Remnawave) отдают нужный формат по User-Agent
+        Net.request(url, headers = mapOf("User-Agent" to "v2rayNG/2.0")) { conn ->
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             body to conn.getHeaderField("subscription-userinfo")?.let(::parseUserInfo)
-        } finally {
-            conn.disconnect()
         }
     }
 
