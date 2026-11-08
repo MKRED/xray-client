@@ -187,6 +187,20 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             Text("О приложении", fontWeight = FontWeight.SemiBold)
             Text("Версия ${BuildConfig.VERSION_NAME}", fontSize = 13.sp, color = C.Muted)
             Text(remember { XrayCore.version() }, fontSize = 12.sp, color = C.Muted)
+            Text(
+                "github.com/${BuildConfig.UPDATE_REPO}",
+                fontSize = 13.sp,
+                color = C.AccentText,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(role = Role.Button) {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/${BuildConfig.UPDATE_REPO}"))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
+                    .padding(vertical = 8.dp),
+            )
             val r = update
             if (r != null) {
                 Text("Доступна версия ${r.tag}", fontSize = 13.sp, color = C.AccentText)
