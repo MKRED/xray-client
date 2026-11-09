@@ -40,6 +40,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         // Подписки старше 6 часов обновляем при запуске
         val stale = data.value.subscriptions.any { System.currentTimeMillis() - it.updatedAt > 6 * 3600_000L }
         if (stale) refreshSubscriptions(silent = true)
+        if (data.value.bypassRu && com.mkred.xrayclient.core.GeoRules.isStale()) updateGeo(silent = true)
     }
 
     fun setMode(mode: SelectionMode) {
@@ -51,6 +52,29 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     fun selectServer(id: String) {
         AppStore.update { it.copy(selectedId = id, mode = SelectionMode.MANUAL) }
         XrayVpnService.reselect(app)
+    }
+
+    // ---- российские сайты напрямую ----
+
+    val geoUpdating = MutableStateFlow(false)
+
+    fun setBypassRu(on: Boolean) {
+        AppLog.i("Settings", "Российские сайты напрямую: $on")
+        AppStore.update { it.copy(bypassRu = on) }
+        XrayVpnService.reload(app)
+        if (on && com.mkred.xrayclient.core.GeoRules.isStale()) updateGeo(silent = true)
+    }
+
+    fun updateGeo(silent: Boolean = false) = viewModelScope.launch {
+        if (geoUpdating.value) return@launch
+        geoUpdating.value = true
+        com.mkred.xrayclient.core.GeoRules.update(app)
+            .onSuccess {
+                if (!silent) message.value = "Базы обновлены"
+                if (data.value.bypassRu) XrayVpnService.reload(app)
+            }
+            .onFailure { if (!silent) message.value = "Не удалось обновить базы: ${it.message}" }
+        geoUpdating.value = false
     }
 
     // ---- блоки приоритета ----

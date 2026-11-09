@@ -151,6 +151,10 @@ data class AppData(
     val splitMode: SplitMode = SplitMode.ALL,
     /** Пакеты приложений для раздельного туннелирования. */
     val splitApps: Set<String> = emptySet(),
+    /** Российские сайты — напрямую, мимо VPN. */
+    val bypassRu: Boolean = false,
+    /** Когда базы ru-geoip/ru-geosite обновлялись из сети (0 — встроенные в APK). */
+    val geoUpdatedAt: Long = 0,
     /** Подробность лога ядра Xray: warning, info или debug. */
     val logLevel: String = "info",
 )

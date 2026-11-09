@@ -155,6 +155,8 @@ object AppStore {
         put("testUrl", d.testUrl)
         put("checkIntervalSec", d.checkIntervalSec)
         put("logLevel", d.logLevel)
+        put("bypassRu", d.bypassRu)
+        put("geoUpdatedAt", d.geoUpdatedAt)
         put("splitMode", d.splitMode.name)
         put("splitApps", JSONArray(d.splitApps.toList()))
     }
@@ -200,6 +202,8 @@ object AppStore {
             testUrl = o.optString("testUrl").ifEmpty { defaults.testUrl },
             checkIntervalSec = o.optInt("checkIntervalSec", defaults.checkIntervalSec),
             logLevel = o.optString("logLevel").ifEmpty { defaults.logLevel },
+            bypassRu = o.optBoolean("bypassRu", false),
+            geoUpdatedAt = o.optLong("geoUpdatedAt", 0),
             splitMode = runCatching { SplitMode.valueOf(o.optString("splitMode")) }.getOrDefault(defaults.splitMode),
             splitApps = o.optJSONArray("splitApps").strings().toSet(),
         )

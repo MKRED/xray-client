@@ -39,6 +39,14 @@ jobs:
           gh release download "$LIBXRAY_TAG" -R 2dust/AndroidLibXrayLite -p libv2ray.aar -D app/libs
           ls -la app/libs
 
+      - name: Russian routing rules (assets)
+        run: |
+          mkdir -p app/src/main/assets
+          curl -fsSL -o "$RUNNER_TEMP/geoip.dat" https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/geoip.dat
+          curl -fsSL -o "$RUNNER_TEMP/geosite.dat" https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/geosite.dat
+          python3 scripts/trim_geo.py "$RUNNER_TEMP/geoip.dat" app/src/main/assets/ru-geoip.dat RU PRIVATE
+          python3 scripts/trim_geo.py "$RUNNER_TEMP/geosite.dat" app/src/main/assets/ru-geosite.dat CATEGORY-RU TLD-RU RU-AVAILABLE-ONLY-INSIDE RU-BLOCKED PRIVATE
+
       - name: Decode keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}

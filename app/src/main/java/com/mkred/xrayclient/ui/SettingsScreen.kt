@@ -45,6 +45,7 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val update by vm.update.collectAsStateWithLifecycle()
     val progress by vm.updateProgress.collectAsStateWithLifecycle()
     val checking by vm.checkingUpdate.collectAsStateWithLifecycle()
+    val geoUpdating by vm.geoUpdating.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var testUrl by remember(data.testUrl) { mutableStateOf(data.testUrl) }
     var showLog by remember { mutableStateOf(false) }
@@ -132,6 +133,35 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 }
             }
             Text("Изменения применяются сразу, без отключения VPN.", fontSize = 12.sp, color = C.Muted)
+        }
+
+        Panel {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Российские сайты — напрямую", fontWeight = FontWeight.SemiBold)
+                    Text("Открываются без VPN, даже в приложениях, которые идут через VPN", fontSize = 12.sp, color = C.Muted)
+                }
+                androidx.compose.material3.Switch(
+                    checked = data.bypassRu,
+                    onCheckedChange = { vm.setBypassRu(it) },
+                    colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Accent, checkedThumbColor = C.Bg),
+                )
+            }
+            Text(
+                "Напрямую: домены .ru, .su, .рф, известные российские сервисы и сайты на российских IP. " +
+                    "Заблокированные в России сайты всё равно идут через VPN.",
+                fontSize = 12.sp, color = C.Muted,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (data.geoUpdatedAt == 0L) "Базы: встроенные в приложение"
+                    else "Базы обновлены ${java.text.SimpleDateFormat("d MMM, HH:mm", java.util.Locale.forLanguageTag("ru")).format(java.util.Date(data.geoUpdatedAt))}",
+                    fontSize = 12.sp, color = C.Muted, modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { vm.updateGeo() }, enabled = !geoUpdating) {
+                    Text(if (geoUpdating) "Обновляю…" else "Обновить базы", color = C.AccentText)
+                }
+            }
         }
 
         Panel {

@@ -51,6 +51,7 @@ class XrayVpnService : VpnService() {
         private const val ACTION_STOP = "stop"
         private const val ACTION_RESELECT = "reselect"
         private const val ACTION_RETUNNEL = "retunnel"
+        private const val ACTION_RELOAD = "reload"
         private const val CHANNEL = "vpn"
         private const val NOTIFICATION_ID = 1
 
@@ -65,6 +66,11 @@ class XrayVpnService : VpnService() {
         /** Пересоздать VPN-интерфейс (после смены списка приложений), не отключаясь. */
         fun retunnel(ctx: Context) {
             if (VpnStateHolder.state.value.status == VpnStatus.CONNECTED) send(ctx, ACTION_RETUNNEL)
+        }
+
+        /** Перезапустить ядро на том же сервере (изменились правила маршрутизации). */
+        fun reload(ctx: Context) {
+            if (VpnStateHolder.state.value.status == VpnStatus.CONNECTED) send(ctx, ACTION_RELOAD)
         }
 
         private fun send(ctx: Context, action: String) {
@@ -97,6 +103,7 @@ class XrayVpnService : VpnService() {
             }
             ACTION_RESELECT -> scope.launch { reselect("изменены настройки") }
             ACTION_RETUNNEL -> scope.launch { retunnel() }
+            ACTION_RELOAD -> scope.launch { reloadCore() }
             // ACTION_START, а также запуск системой («Постоянная VPN»)
             else -> {
                 startForegroundCompat(getString(R.string.app_name), "Подключение…")
@@ -213,6 +220,13 @@ class XrayVpnService : VpnService() {
         return this
     }
 
+    private suspend fun reloadCore() = lock.withLock {
+        val p = current ?: return@withLock
+        AppLog.i(TAG, "Перезапуск ядра (изменились правила маршрутизации)")
+        stopCore()
+        startCore(p)
+    }
+
     /** Новый интерфейс с текущими настройками приложений; ядро перезапускается на том же сервере. */
     private suspend fun retunnel() = lock.withLock {
         val p = current ?: return@withLock
@@ -232,7 +246,7 @@ class XrayVpnService : VpnService() {
         val c = controller ?: return false
         return try {
             AppLog.i(TAG, "Запуск ядра: «${p.name}» ${p.protocol} ${p.address}:${p.port} ${p.network}/${p.security}")
-            synchronized(coreLock) { c.startLoop(XrayConfig.forVpn(p, AppStore.data.value.logLevel, localPort), fd) }
+            synchronized(coreLock) { c.startLoop(XrayConfig.forVpn(p, AppStore.data.value.logLevel, localPort, AppStore.data.value.bypassRu), fd) }
             Net.proxyPort = localPort
             AppLog.i(TAG, "Ядро запущено")
             current = p

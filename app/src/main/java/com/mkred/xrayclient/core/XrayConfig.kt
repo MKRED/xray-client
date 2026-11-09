@@ -15,7 +15,7 @@ object XrayConfig {
      * @param localPort порт локального HTTP-прокси для запросов самого приложения
      *                  (обновления, подписки): приложение исключено из туннеля.
      */
-    fun forVpn(p: Profile, logLevel: String = "info", localPort: Int? = null): String = JSONObject().apply {
+    fun forVpn(p: Profile, logLevel: String = "info", localPort: Int? = null, bypassRu: Boolean = false): String = JSONObject().apply {
         put("log", JSONObject().apply {
             put("loglevel", logLevel)
             // Журнал посещённых адресов — только в подробном режиме
@@ -46,8 +46,16 @@ object XrayConfig {
             put(JSONObject().put("tag", "block").put("protocol", "blackhole"))
         })
         put("routing", JSONObject().apply {
-            put("domainStrategy", "AsIs")
+            // Для правил по IP домен нужно разрешить; без обхода РФ это не требуется
+            put("domainStrategy", if (bypassRu) "IPIfNonMatch" else "AsIs")
             put("rules", JSONArray().apply {
+                // Запросы самого приложения (обновления, подписки) — всегда через туннель
+                put(JSONObject().apply {
+                    put("type", "field")
+                    put("inboundTag", JSONArray(listOf("app-local")))
+                    put("outboundTag", "proxy")
+                })
+                if (bypassRu) ruRules().forEach { put(it) }
                 // Локальная сеть — напрямую
                 put(JSONObject().apply {
                     put("type", "field")
@@ -68,6 +76,24 @@ object XrayConfig {
             })
         })
     }.toString()
+
+    /**
+     * Российские сайты напрямую. Порядок важен: сначала заблокированные в РФ
+     * домены отправляем в туннель, потом российские домены и IP — напрямую.
+     */
+    private fun ruRules(): List<JSONObject> {
+        fun site(c: String) = "ext:${GeoRules.SITE_FILE}:$c"
+        fun rule(key: String, values: List<String>, out: String) = JSONObject().apply {
+            put("type", "field")
+            put(key, JSONArray(values))
+            put("outboundTag", out)
+        }
+        return listOf(
+            rule("domain", listOf(site("ru-blocked")), "proxy"),
+            rule("domain", listOf(site("category-ru"), site("tld-ru"), site("ru-available-only-inside")), "direct"),
+            rule("ip", listOf("ext:${GeoRules.IP_FILE}:ru"), "direct"),
+        )
+    }
 
     /** Минимальный конфиг для проверки задержки: только исходящий прокси. */
     fun forTest(p: Profile): String = JSONObject().apply {

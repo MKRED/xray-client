@@ -10,3 +10,4 @@ build/
 app/libs/*.aar
 *.jks
 *.keystore
+app/src/main/assets/*.dat
