@@ -17,6 +17,9 @@ data class SpeedSample(val ts: Long, val down: Long, val up: Long)
 
 data class PingPoint(val ts: Long, val delay: Long)
 
+/** Замер скорости: Мбит/с (≤0 — не удалось), размер пакета в МБ. */
+data class SpeedPoint(val ts: Long, val mbps: Float, val sizeMb: Int)
+
 /** Сводка по серверу за один час: сколько проверок прошло и сколько упало. */
 data class PingBucket(val id: String, val hour: Long, val ok: Int, val fail: Int, val sumDelay: Long)
 
@@ -62,6 +65,18 @@ object Stats {
     /** Последние проверки каждого сервера (для графика пинга). */
     private val _pings = MutableStateFlow<Map<String, List<PingPoint>>>(emptyMap())
     val pings: StateFlow<Map<String, List<PingPoint>>> = _pings.asStateFlow()
+
+    /** Последние замеры скорости каждого сервера. */
+    private val _speeds = MutableStateFlow<Map<String, List<SpeedPoint>>>(emptyMap())
+    val speeds: StateFlow<Map<String, List<SpeedPoint>>> = _speeds.asStateFlow()
+
+    fun recordSpeed(id: String, mbps: Float, sizeMb: Int, ts: Long = System.currentTimeMillis()) {
+        synchronized(lock) {
+            val list = (_speeds.value[id].orEmpty() + SpeedPoint(ts, mbps, sizeMb)).takeLast(30)
+            _speeds.value = _speeds.value + (id to list)
+        }
+        save()
+    }
 
     private val _buckets = MutableStateFlow<List<PingBucket>>(emptyList())
     val buckets: StateFlow<List<PingBucket>> = _buckets.asStateFlow()
@@ -160,7 +175,7 @@ object Stats {
         synchronized(lock) {
             _daily.value = emptyMap(); _pings.value = emptyMap(); _buckets.value = emptyList()
             _switches.value = emptyList(); _session.value = Traffic(); _speed.value = emptyList()
-            _usage.value = emptyList(); names.clear()
+            _usage.value = emptyList(); names.clear(); _speeds.value = emptyMap()
         }
         save()
     }
@@ -183,6 +198,11 @@ object Stats {
         })
         put("buckets", JSONArray().apply {
             _buckets.value.forEach { put(JSONArray(listOf(it.id, it.hour, it.ok, it.fail, it.sumDelay))) }
+        })
+        put("speeds", JSONObject().apply {
+            _speeds.value.forEach { (id, pts) ->
+                put(id, JSONArray().apply { pts.forEach { put(JSONArray(listOf(it.ts, it.mbps.toDouble(), it.sizeMb))) } })
+            }
         })
         put("usage", JSONArray().apply {
             _usage.value.forEach { put(JSONArray(listOf(it.id, it.hour, it.seconds, it.down, it.up))) }
@@ -212,6 +232,12 @@ object Stats {
             _buckets.value = (0 until a.length()).map {
                 val x = a.getJSONArray(it)
                 PingBucket(x.getString(0), x.getLong(1), x.getInt(2), x.getInt(3), x.getLong(4))
+            }
+        }
+        o.optJSONObject("speeds")?.let { sp ->
+            _speeds.value = sp.keys().asSequence().associateWith { id ->
+                val a = sp.getJSONArray(id)
+                (0 until a.length()).map { val x = a.getJSONArray(it); SpeedPoint(x.getLong(0), x.getDouble(1).toFloat(), x.getInt(2)) }
             }
         }
         o.optJSONArray("usage")?.let { a ->

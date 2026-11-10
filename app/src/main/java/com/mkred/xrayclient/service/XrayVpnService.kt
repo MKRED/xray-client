@@ -246,7 +246,7 @@ class XrayVpnService : VpnService() {
         val c = controller ?: return false
         return try {
             AppLog.i(TAG, "Запуск ядра: «${p.name}» ${p.protocol} ${p.address}:${p.port} ${p.network}/${p.security}")
-            synchronized(coreLock) { c.startLoop(XrayConfig.forVpn(p, AppStore.data.value.logLevel, localPort, AppStore.data.value.bypassRu), fd) }
+            synchronized(coreLock) { synchronized(XrayCore.startLock) { c.startLoop(XrayConfig.forVpn(p, AppStore.data.value.logLevel, localPort, AppStore.data.value.bypassRu), fd) } }
             Net.proxyPort = localPort
             AppLog.i(TAG, "Ядро запущено")
             current = p
@@ -335,8 +335,8 @@ class XrayVpnService : VpnService() {
     private fun startNotifier() {
         notifier?.cancel()
         notifier = scope.launch {
-            combine(AppStore.data, AppStore.delays, VpnStateHolder.state) { d, delays, st ->
-                Triple(d.mode, st.profileId, st.profileId?.let { delays[it] })
+            combine(AppStore.data, AppStore.delays, VpnStateHolder.state, Stats.speeds) { d, delays, st, speeds ->
+                listOf(d.mode, d.metric, st.profileId, st.profileId?.let { delays[it] }, st.profileId?.let { speeds[it]?.lastOrNull() })
             }
                 .distinctUntilChanged()
                 .collect { if (current != null) updateNotification() }
@@ -423,12 +423,14 @@ class XrayVpnService : VpnService() {
 
     private fun updateNotification() {
         val p = current ?: return
+        val quality = AppStore.data.value.metric == com.mkred.xrayclient.data.Metric.QUALITY
         val mode = when (AppStore.data.value.mode) {
-            SelectionMode.FASTEST -> "Быстрый"
+            SelectionMode.FASTEST -> if (quality) "Лучший" else "Быстрый"
             SelectionMode.PRIORITY -> "По приоритету"
             SelectionMode.MANUAL -> "Вручную"
         }
-        val ping = AppStore.delays.value[p.id]?.takeIf { it > 0 }?.let { " · $it мс" }.orEmpty()
+        val ping = if (quality) " · качество " + com.mkred.xrayclient.core.Quality.of(p).label
+        else AppStore.delays.value[p.id]?.takeIf { it > 0 }?.let { " · $it мс" }.orEmpty()
         getSystemService(NotificationManager::class.java)
             .notify(NOTIFICATION_ID, notification("Подключено · $mode", p.name + ping))
     }

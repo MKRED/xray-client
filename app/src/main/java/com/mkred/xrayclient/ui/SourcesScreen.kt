@@ -193,7 +193,7 @@ private fun SourcesList(vm: MainViewModel, onOpenSub: (String) -> Unit, onOpenSe
                         ProtocolBadge(p.protocol, 40.dp)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(p.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (on) C.Text else C.Muted)
-                            Text(securityText(p) + " · " + delayText(delays[p.id]), fontSize = 12.sp, color = if (on) C.Muted else Dim)
+                            Text(securityText(p) + " · " + metricText(p), fontSize = 12.sp, color = if (on) C.Muted else Dim)
                         }
                         if (!on) Pill("выкл")
                         Icon(Icons.Chevron, contentDescription = null, tint = Dim, modifier = Modifier.size(18.dp))
@@ -269,7 +269,12 @@ private fun SubscriptionDetail(
         LaunchedEffect(Unit) { onBack() }
         return
     }
+    val run by vm.speedRun.collectAsStateWithLifecycle()
+    val speeds by Stats.speeds.collectAsStateWithLifecycle()
+    val buckets by Stats.buckets.collectAsStateWithLifecycle()
+    val qualityMode = data.metric == com.mkred.xrayclient.data.Metric.QUALITY
     var rename by remember { mutableStateOf(false) }
+    var confirmSpeed by remember { mutableStateOf(false) }
     var addWord by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
@@ -297,7 +302,12 @@ private fun SubscriptionDetail(
 
         Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("${active.size}", "в работе", Modifier.weight(1f), C.AccentText, suffix = "/${servers.size}")
-            StatTile(best?.toString() ?: "—", "лучший пинг", Modifier.weight(1f), suffix = if (best != null) " мс" else "")
+            if (qualityMode) {
+                val bestQ = active.map { com.mkred.xrayclient.core.Quality.of(it, delays, speeds, buckets) }.maxByOrNull { it.score }
+                StatTile(bestQ?.label ?: "—", "лучшее качество", Modifier.weight(1f), bestQ?.let { qualityColor(it) } ?: C.Text)
+            } else {
+                StatTile(best?.toString() ?: "—", "лучший пинг", Modifier.weight(1f), suffix = if (best != null) " мс" else "")
+            }
             StatTile(if (sub.updatedAt > 0) time(sub.updatedAt) else "—", "обновлена", Modifier.weight(1f))
         }
 
@@ -327,6 +337,16 @@ private fun SubscriptionDetail(
             }
         }
 
+        Panel {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Разрешить тест скорости", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Выключите, если у подписки лимит трафика", fontSize = 12.sp, color = C.Muted)
+                }
+                AppSwitch(sub.speedTestAllowed) { vm.setSpeedTestAllowed(sub.id, it) }
+            }
+        }
+
         // ---- исключать по словам ----
         SectionLabel("ИСКЛЮЧАТЬ ПО СЛОВАМ")
         FlowChips {
@@ -352,9 +372,13 @@ private fun SubscriptionDetail(
         Row(verticalAlignment = Alignment.CenterVertically) {
             SectionLabel("СЕРВЕРЫ · ${servers.size}", Modifier.weight(1f))
             TextButton(onClick = { vm.testProfiles(active) }, enabled = !testing && active.isNotEmpty()) {
-                Text(if (testing) "Проверяю…" else "Проверить пинг", color = C.AccentText, fontSize = 13.sp)
+                Text(if (testing) "…" else "Пинг", color = C.AccentText, fontSize = 13.sp)
+            }
+            TextButton(onClick = { confirmSpeed = true }, enabled = run == null && sub.speedTestAllowed && active.isNotEmpty()) {
+                Text("Скорость", color = if (sub.speedTestAllowed) C.AccentText else C.Muted, fontSize = 13.sp)
             }
         }
+        run?.takeIf { r -> r.ids.any { id -> servers.any { it.id == id } } }?.let { r -> SpeedRunPanel(r, onStop = { vm.stopSpeedTest() }) }
         if (servers.isEmpty()) {
             EmptyHint("Серверов нет. Обновите подписку.")
         } else {
@@ -371,15 +395,23 @@ private fun SubscriptionDetail(
                                 when {
                                     byWord != null -> "скрыт словом «$byWord»"
                                     manualOff -> "выключен вручную"
+                                    run?.currentId == p.id -> "качаем… ${formatMbps(run!!.liveMbps)}"
+                                    run != null && p.id in run!!.ids.drop(run!!.index + 1) -> "в очереди · " + delayText(delays[p.id])
+                                    qualityMode -> qualitySubtitle(p)
                                     else -> securityText(p)
                                 },
                                 fontSize = 11.sp,
-                                color = if (byWord != null) C.Warn else if (manualOff) Dim else C.Muted,
+                                color = when {
+                                    byWord != null -> C.Warn
+                                    manualOff -> Dim
+                                    run?.currentId == p.id -> C.AccentText
+                                    else -> C.Muted
+                                },
                             )
                         }
                         if (on) {
-                            val d = delays[p.id]
-                            Text(if (d != null && d < 0) "нет ответа" else delayText(d), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = delayColor(d))
+                            if (run?.currentId == p.id) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 3.dp, color = C.Accent)
+                            else MetricValue(p)
                         }
                         AppSwitch(on, enabled = byWord == null, small = true) { vm.setExcluded(listOf(p.id), !it) }
                     }
@@ -396,6 +428,18 @@ private fun SubscriptionDetail(
         Box(Modifier.height(16.dp))
     }
 
+    if (confirmSpeed) {
+        val n = active.count { true }
+        val mb = data.speedTestMb
+        ConfirmDialog(
+            "Проверить скорость ${serversWord(n)}?",
+            "≈ ${n * mb} МБ трафика, примерно ${maxOf(1, n * 12 / 60)}–${maxOf(2, n * 20 / 60)} мин. Серверы проверяются по одному, VPN не прерывается.",
+            "Проверить",
+            onConfirm = { confirmSpeed = false; vm.startSpeedTest(sub.name, active) },
+            onClose = { confirmSpeed = false },
+            danger = false,
+        )
+    }
     if (rename) TextInputDialog("Название подписки", sub.name, onDone = { vm.renameSubscription(sub.id, it); rename = false }, onClose = { rename = false })
     if (addWord) TextInputDialog(
         "Исключать серверы, если в названии есть", "",
@@ -432,6 +476,9 @@ private fun ServerDetail(vm: MainViewModel, id: String, onToggleVpn: () -> Unit,
         LaunchedEffect(Unit) { onBack() }
         return
     }
+    val run by vm.speedRun.collectAsStateWithLifecycle()
+    val speeds by Stats.speeds.collectAsStateWithLifecycle()
+    val qualityMode = data.metric == com.mkred.xrayclient.data.Metric.QUALITY
     var rename by remember { mutableStateOf(false) }
     var qr by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -490,7 +537,9 @@ private fun ServerDetail(vm: MainViewModel, id: String, onToggleVpn: () -> Unit,
             }
         }
 
-        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (qualityMode) {
+            QualityCard(com.mkred.xrayclient.core.Quality.of(p, delays, speeds, buckets))
+        } else Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val d = delays[p.id]
             StatTile(
                 when { d == null -> "—"; d < 0 -> "нет"; else -> "$d" }, "пинг сейчас", Modifier.weight(1f),
@@ -532,6 +581,38 @@ private fun ServerDetail(vm: MainViewModel, id: String, onToggleVpn: () -> Unit,
                 modifier = Modifier.weight(1f).height(48.dp),
                 shape = RoundedCornerShape(14.dp),
             ) { Text(if (testing) "Проверяю…" else "Проверить пинг", color = C.Text) }
+        }
+
+        // ---- тест скорости ----
+        val allowed = AppStore.speedTestAllowed(p)
+        val mine = run?.takeIf { it.currentId == p.id }
+        if (mine != null) {
+            SpeedRunPanel(mine, onStop = { vm.stopSpeedTest() })
+        } else {
+            PrimaryButton(
+                "Проверить скорость",
+                onClick = { vm.startSpeedTest(p.name, listOf(p)) },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = allowed && run == null && on,
+            )
+            Text(
+                if (!allowed) "Тест скорости запрещён в настройках подписки" else "≈ ${data.speedTestMb} МБ трафика · 5–15 секунд",
+                fontSize = 12.sp, color = Dim, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+        }
+        val sp = speeds[p.id].orEmpty().takeLast(30)
+        if (sp.isNotEmpty()) {
+            Panel {
+                Row {
+                    Text("Замеры скорости", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    sp.lastOrNull()?.let { Text("последний ${agoText(it.ts)}", fontSize = 13.sp, color = C.Muted) }
+                }
+                LineChart(
+                    series = listOf(ChartSeries(sp.map { if (it.mbps > 0) it.mbps else null }, C.Accent, 30)),
+                    failures = sp.indices.filter { sp[it].mbps <= 0f },
+                    modifier = Modifier.fillMaxWidth().height(64.dp),
+                )
+            }
         }
 
         SectionLabel("ПАРАМЕТРЫ")
@@ -791,12 +872,12 @@ private fun TextInputDialog(title: String, initial: String, hint: String? = null
 }
 
 @Composable
-private fun ConfirmDialog(title: String, text: String, action: String, onConfirm: () -> Unit, onClose: () -> Unit) {
+private fun ConfirmDialog(title: String, text: String, action: String, onConfirm: () -> Unit, onClose: () -> Unit, danger: Boolean = true) {
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text(title) },
         text = { Text(text) },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(action, color = C.Error) } },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(action, color = if (danger) C.Error else C.AccentText) } },
         dismissButton = { TextButton(onClick = onClose) { Text("Отмена") } },
     )
 }
@@ -859,4 +940,72 @@ private fun readClipboard(context: Context): String? {
 
 private fun copyToClipboard(context: Context, text: String) {
     context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("xray", text))
+}
+
+
+/** Плашка «Проверяем скорость · 3 из 10» с прогрессом и кнопкой «Остановить». */
+@Composable
+private fun SpeedRunPanel(r: com.mkred.xrayclient.core.SpeedRun, onStop: () -> Unit) {
+    val done = r.totalBytes + r.currentBytes
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.AccentBg)
+            .border(BorderStroke(1.dp, C.AccentBorder), RoundedCornerShape(18.dp)).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    if (r.ids.size > 1) "Проверяем скорость · ${r.index + 1} из ${r.ids.size}" else "Проверяем скорость",
+                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = C.AccentText,
+                )
+                Text(
+                    "скачано ${formatBytes(done)} из ≈${formatBytes(r.plannedBytes)}" +
+                        if (r.liveMbps > 0f) " · ${formatMbps(r.liveMbps)}" else "",
+                    fontSize = 12.sp, color = C.Muted,
+                )
+            }
+            OutlinedButton(onClick = onStop, shape = RoundedCornerShape(10.dp)) { Text("Остановить", color = C.Text, fontSize = 13.sp) }
+        }
+        LinearProgressIndicator(
+            progress = { if (r.plannedBytes > 0) (done.toFloat() / r.plannedBytes).coerceIn(0f, 1f) else 0f },
+            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50)),
+            color = C.Accent, trackColor = C.Surface2, drawStopIndicator = {},
+        )
+    }
+}
+
+/** Карточка качества: кольцо и разбивка на скорость, пинг и стабильность. */
+@Composable
+private fun QualityCard(q: com.mkred.xrayclient.core.QualityInfo) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(C.Surface)
+            .border(BorderStroke(1.dp, C.Border), RoundedCornerShape(20.dp)).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            QualityRing(q)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    if (q.complete) com.mkred.xrayclient.core.Quality.word(q.score) else "Неполная оценка",
+                    fontSize = 18.sp, fontWeight = FontWeight.Bold, color = qualityColor(q),
+                )
+                Text(
+                    when {
+                        q.speedAt == null -> "Скорость ещё не измерялась — оценка по пингу и стабильности"
+                        !q.complete -> "Скорость измерена ${agoText(q.speedAt)} — устарела, оценка по пингу и стабильности"
+                        else -> "Скорость измерена ${agoText(q.speedAt)} пакетом ${q.speedSizeMb} МБ"
+                    },
+                    fontSize = 12.sp, color = C.Muted,
+                )
+            }
+        }
+        QualityPart(
+            "Скорость", q.speedMbps?.let { formatMbps(it) } ?: "—", q.speedPts, 50, C.Accent,
+            if (q.complete) (q.speedMbps ?: 0f) / com.mkred.xrayclient.core.Quality.SPEED_MAX_MBPS else 0f,
+        )
+        QualityPart("Пинг", delayText(q.delay), q.pingPts, 30, C.Blue, q.pingPts / 30f)
+        QualityPart(
+            "Стабильность", q.uptime?.let { "${(it * 100).toInt()}%" } ?: "—", q.stabilityPts, 20, Purple, q.stabilityPts / 20f,
+        )
+    }
 }

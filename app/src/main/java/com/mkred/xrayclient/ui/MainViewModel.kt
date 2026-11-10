@@ -54,6 +54,29 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         XrayVpnService.reselect(app)
     }
 
+    // ---- метрика и тест скорости ----
+
+    val speedRun = com.mkred.xrayclient.core.SpeedTest.run
+
+    fun setMetric(m: com.mkred.xrayclient.data.Metric) {
+        if (data.value.metric == m) return
+        AppLog.i("Settings", "Метрика: $m")
+        AppStore.update { it.copy(metric = m) }
+        XrayVpnService.reselect(app)
+    }
+
+    fun setSpeedTestMb(mb: Int) = AppStore.update { it.copy(speedTestMb = mb) }
+
+    fun setSpeedTestAllowed(subId: String, allowed: Boolean) {
+        AppLog.i("Settings", "Тест скорости для подписки $subId: $allowed")
+        AppStore.setSpeedTestAllowed(subId, allowed)
+    }
+
+    fun startSpeedTest(title: String, list: List<com.mkred.xrayclient.data.Profile>) =
+        com.mkred.xrayclient.core.SpeedTest.start(title, list)
+
+    fun stopSpeedTest() = com.mkred.xrayclient.core.SpeedTest.stop()
+
     // ---- российские сайты напрямую ----
 
     val geoUpdating = MutableStateFlow(false)

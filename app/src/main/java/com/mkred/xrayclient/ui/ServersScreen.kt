@@ -55,7 +55,7 @@ fun ServersScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         Text("Серверы", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 20.dp, bottom = 12.dp))
 
-        ModeSwitch(data.mode, vm::setMode)
+        ModeSwitch(data.mode, vm::setMode, quality = data.metric == com.mkred.xrayclient.data.Metric.QUALITY)
 
         Row(
             Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp),
@@ -65,7 +65,9 @@ fun ServersScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 when (data.mode) {
                     SelectionMode.PRIORITY -> "Первый блок с рабочим сервером, внутри — самый быстрый"
                     SelectionMode.MANUAL -> "Нажмите на сервер, чтобы выбрать"
-                    SelectionMode.FASTEST -> "Выбирается самый быстрый"
+                    SelectionMode.FASTEST ->
+                        if (data.metric == com.mkred.xrayclient.data.Metric.QUALITY) "Выбирается сервер с лучшим качеством"
+                        else "Выбирается самый быстрый"
                 },
                 fontSize = 13.sp, color = C.Muted, modifier = Modifier.weight(1f),
             )
@@ -100,12 +102,12 @@ fun ServersScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     Column(Modifier.weight(1f)) {
                         Text(p.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            (if (active) "Активен · " else "") + p.subtitle,
+                            (if (active) "Активен · " else "") +
+                                if (data.metric == com.mkred.xrayclient.data.Metric.QUALITY) qualitySubtitle(p) else p.subtitle,
                             fontSize = 12.sp, color = C.Muted, maxLines = 1,
                         )
                     }
-                    val d = delays[p.id]
-                    Text(delayText(d), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = delayColor(d))
+                    MetricValue(p)
                     run {
                         val fromSub = p.subscriptionId != null
                         IconButton(onClick = {
@@ -136,7 +138,7 @@ fun ServersScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun ModeSwitch(mode: SelectionMode, onChange: (SelectionMode) -> Unit) {
+fun ModeSwitch(mode: SelectionMode, onChange: (SelectionMode) -> Unit, quality: Boolean = false) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -147,7 +149,7 @@ fun ModeSwitch(mode: SelectionMode, onChange: (SelectionMode) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         listOf(
-            SelectionMode.FASTEST to "Быстрый",
+            SelectionMode.FASTEST to if (quality) "Лучший" else "Быстрый",
             SelectionMode.PRIORITY to "Приоритет",
             SelectionMode.MANUAL to "Вручную",
         ).forEach { (m, label) ->

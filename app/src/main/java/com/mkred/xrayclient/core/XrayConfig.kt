@@ -95,6 +95,18 @@ object XrayConfig {
         )
     }
 
+    /** Конфиг для теста скорости: локальный HTTP-вход → сервер. */
+    fun forSpeedTest(p: Profile, port: Int): String = JSONObject().apply {
+        put("log", JSONObject().put("loglevel", "none"))
+        put("inbounds", JSONArray().put(JSONObject().apply {
+            put("tag", "speed-in")
+            put("listen", "127.0.0.1")
+            put("port", port)
+            put("protocol", "http")
+        }))
+        put("outbounds", JSONArray().put(outbound(p)))
+    }.toString()
+
     /** Минимальный конфиг для проверки задержки: только исходящий прокси. */
     fun forTest(p: Profile): String = JSONObject().apply {
         put("log", JSONObject().put("loglevel", "none"))

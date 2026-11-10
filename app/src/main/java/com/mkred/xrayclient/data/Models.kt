@@ -33,6 +33,9 @@ data class PriorityBlock(
     val mobileOnly: Boolean = false,
 )
 
+/** Как оценивать серверы во всём приложении. */
+enum class Metric { LATENCY, QUALITY }
+
 /** Раздельное туннелирование. */
 enum class SplitMode {
     /** Через VPN идут все приложения. */
@@ -124,6 +127,8 @@ data class Subscription(
     val updatedAt: Long = 0,
     val info: SubscriptionInfo? = null,
     val lastError: String? = null,
+    /** Разрешён ли тест скорости (выключают для подписок с лимитом трафика). */
+    val speedTestAllowed: Boolean = true,
     /** Выключенная подписка обновляется как обычно, но её серверы не используются. */
     val enabled: Boolean = true,
     /** Серверы, в названии которых есть любое из этих слов, не используются. */
@@ -153,6 +158,10 @@ data class AppData(
     val splitMode: SplitMode = SplitMode.ALL,
     /** Пакеты приложений для раздельного туннелирования. */
     val splitApps: Set<String> = emptySet(),
+    /** Метрика: задержка или качество (скорость + пинг + стабильность). */
+    val metric: Metric = Metric.LATENCY,
+    /** Размер пакета для теста скорости, МБ: 1, 5, 10 или 25. */
+    val speedTestMb: Int = 5,
     /** Российские сайты — напрямую, мимо VPN. */
     val bypassRu: Boolean = false,
     /** Когда базы ru-geoip/ru-geosite обновлялись из сети (0 — встроенные в APK). */

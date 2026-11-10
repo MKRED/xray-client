@@ -127,7 +127,7 @@ fun HomeScreen(vm: MainViewModel, onToggle: () -> Unit, onOpenServers: () -> Uni
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(Icons.Bolt, contentDescription = null, tint = C.AccentText, modifier = Modifier.size(16.dp))
-            Text(modeLabel(data.mode), color = C.AccentText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(modeLabel(data.mode, data.metric == com.mkred.xrayclient.data.Metric.QUALITY), color = C.AccentText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
 
         Row(
@@ -151,10 +151,7 @@ fun HomeScreen(vm: MainViewModel, onToggle: () -> Unit, onOpenServers: () -> Uni
                     fontSize = 13.sp, color = C.Muted,
                 )
             }
-            shown?.let {
-                val d = delays[it.id]
-                Text(delayText(d), color = delayColor(d), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            }
+            shown?.let { MetricValue(it, big = true) }
             Icon(Icons.Chevron, contentDescription = null, tint = C.Muted, modifier = Modifier.size(18.dp))
         }
         Spacer(Modifier.height(8.dp))
@@ -252,8 +249,8 @@ fun UpdateAction(progress: com.mkred.xrayclient.update.Updater.Progress?, onInst
     )
 }
 
-fun modeLabel(mode: SelectionMode) = when (mode) {
-    SelectionMode.FASTEST -> "Авто · самый быстрый"
+fun modeLabel(mode: SelectionMode, quality: Boolean = false) = when (mode) {
+    SelectionMode.FASTEST -> if (quality) "Авто · лучшее качество" else "Авто · самый быстрый"
     SelectionMode.PRIORITY -> "Авто · по приоритету"
     SelectionMode.MANUAL -> "Вручную"
 }

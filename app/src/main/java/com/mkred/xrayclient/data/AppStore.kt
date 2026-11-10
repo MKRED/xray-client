@@ -96,6 +96,14 @@ object AppStore {
         d.copy(subscriptions = d.subscriptions.map { if (it.id == id && name.isNotBlank()) it.copy(name = name.trim()) else it })
     }
 
+    fun setSpeedTestAllowed(id: String, allowed: Boolean) = update { d ->
+        d.copy(subscriptions = d.subscriptions.map { if (it.id == id) it.copy(speedTestAllowed = allowed) else it })
+    }
+
+    /** Можно ли тестировать скорость сервера (свои серверы — всегда). */
+    fun speedTestAllowed(p: Profile): Boolean =
+        p.subscriptionId == null || _data.value.subscriptions.firstOrNull { it.id == p.subscriptionId }?.speedTestAllowed != false
+
     fun setSubscriptionEnabled(id: String, enabled: Boolean) = update { d ->
         d.copy(subscriptions = d.subscriptions.map { if (it.id == id) it.copy(enabled = enabled) else it })
     }
@@ -135,6 +143,7 @@ object AppStore {
                     s.lastError?.let { put("lastError", it) }
                     put("excludeKeywords", JSONArray(s.excludeKeywords))
                     put("enabled", s.enabled)
+                    put("speedTest", s.speedTestAllowed)
                     s.info?.let { i ->
                         put("info", JSONObject().apply {
                             put("upload", i.upload); put("download", i.download)
@@ -173,6 +182,8 @@ object AppStore {
         put("checkIntervalSec", d.checkIntervalSec)
         put("logLevel", d.logLevel)
         put("bypassRu", d.bypassRu)
+        put("metric", d.metric.name)
+        put("speedTestMb", d.speedTestMb)
         put("geoUpdatedAt", d.geoUpdatedAt)
         put("splitMode", d.splitMode.name)
         put("splitApps", JSONArray(d.splitApps.toList()))
@@ -188,6 +199,7 @@ object AppStore {
                 lastError = s.optString("lastError").ifEmpty { null },
                 excludeKeywords = s.optJSONArray("excludeKeywords").strings(),
                 enabled = s.optBoolean("enabled", true),
+                speedTestAllowed = s.optBoolean("speedTest", true),
                 info = s.optJSONObject("info")?.let { i ->
                     SubscriptionInfo(i.optLong("upload"), i.optLong("download"), i.optLong("total"), i.optLong("expire"))
                 },
@@ -220,6 +232,8 @@ object AppStore {
             checkIntervalSec = o.optInt("checkIntervalSec", defaults.checkIntervalSec),
             logLevel = o.optString("logLevel").ifEmpty { defaults.logLevel },
             bypassRu = o.optBoolean("bypassRu", false),
+            metric = runCatching { Metric.valueOf(o.optString("metric")) }.getOrDefault(Metric.LATENCY),
+            speedTestMb = o.optInt("speedTestMb", 5),
             geoUpdatedAt = o.optLong("geoUpdatedAt", 0),
             splitMode = runCatching { SplitMode.valueOf(o.optString("splitMode")) }.getOrDefault(defaults.splitMode),
             splitApps = o.optJSONArray("splitApps").strings().toSet(),

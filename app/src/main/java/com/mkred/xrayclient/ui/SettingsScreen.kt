@@ -36,7 +36,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mkred.xrayclient.BuildConfig
+import com.mkred.xrayclient.data.Metric
 import com.mkred.xrayclient.data.SplitMode
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.graphics.Color
 import com.mkred.xrayclient.core.XrayCore
 
 @Composable
@@ -59,6 +64,70 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("Настройки", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 20.dp))
+
+        // ---- метрика ----
+        Panel {
+            Text("Как оценивать серверы", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            Text("Одна метрика для всего приложения: по ней показываются серверы и выбирается лучший", fontSize = 12.sp, color = C.Muted)
+            Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MetricCard(
+                    "Задержка", "Только пинг. Без расхода трафика", data.metric == Metric.LATENCY, Modifier.weight(1f),
+                    sample = { Text("48 мс", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = C.AccentText) },
+                ) { vm.setMetric(Metric.LATENCY) }
+                MetricCard(
+                    "Качество", "Скорость, пинг и стабильность", data.metric == Metric.QUALITY, Modifier.weight(1f),
+                    sample = {
+                        Text(
+                            "85", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = C.Bg,
+                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(C.Accent).padding(horizontal = 8.dp, vertical = 2.dp),
+                        )
+                    },
+                ) { vm.setMetric(Metric.QUALITY) }
+            }
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.Surface2).padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("Из чего складывается качество", fontSize = 12.sp, color = C.Muted)
+                WeightRow("Скорость", 1f, C.Accent, "50 балл.")
+                WeightRow("Пинг", 0.6f, C.Blue, "30 балл.")
+                WeightRow("Стабильность", 0.4f, Purple, "20 балл.")
+                Text(
+                    "100 Мбит/с и выше — максимум скорости · 30 мс и ниже — максимум пинга · стабильность — доступность за 24 ч. " +
+                        "Без замера скорости за последние сутки оценка неполная (≈, максимум 50).",
+                    fontSize = 11.sp, color = Color(0xFF6B7280),
+                )
+            }
+        }
+
+        // ---- тест скорости ----
+        Panel {
+            Text("Тест скорости", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            Text("Размер файла, который скачивается через сервер. Больше — точнее, но дороже по трафику", fontSize = 12.sp, color = C.Muted)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(1 to "быстро", 5 to "обычно", 10 to "точнее", 25 to "максимум").forEach { (mb, hint) ->
+                    val sel = data.speedTestMb == mb
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .height(56.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (sel) C.AccentBg else C.Chip)
+                            .then(if (sel) Modifier.border(2.dp, C.Accent, RoundedCornerShape(12.dp)) else Modifier)
+                            .clickable(role = Role.RadioButton) { vm.setSpeedTestMb(mb) },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text("$mb МБ", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = if (sel) C.AccentText else C.Text)
+                        Text(hint, fontSize = 10.sp, color = C.Muted)
+                    }
+                }
+            }
+            Text(
+                "Тест запускается вручную на экране подписки или сервера. Подписки с лимитом трафика можно исключить там же.",
+                fontSize = 12.sp, color = C.Muted,
+            )
+        }
 
         Panel {
             Text("Проверка серверов во время работы", fontWeight = FontWeight.SemiBold)
@@ -246,6 +315,7 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
 
     if (showLog) LogViewer(vm, onClose = { showLog = false })
 
+
     if (pickApps) {
         AppPickerDialog(
             title = if (data.splitMode == SplitMode.ONLY_SELECTED) "Через VPN" else "Мимо VPN",
@@ -253,5 +323,43 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             onDone = { vm.setSplitApps(it); pickApps = false },
             onCancel = { pickApps = false },
         )
+    }
+}
+
+
+@Composable
+private fun MetricCard(
+    title: String,
+    desc: String,
+    selected: Boolean,
+    modifier: Modifier,
+    sample: @Composable () -> Unit,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Column(
+        modifier
+            .fillMaxHeight()
+            .clip(shape)
+            .background(if (selected) C.AccentBg else C.Surface2)
+            .border(if (selected) 2.dp else 1.dp, if (selected) C.Accent else C.Border, shape)
+            .clickable(role = Role.RadioButton, onClick = onClick)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        sample()
+        Text(desc, fontSize = 11.sp, color = C.Muted)
+    }
+}
+
+@Composable
+private fun WeightRow(label: String, fraction: Float, color: Color, value: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(label, fontSize = 13.sp, modifier = Modifier.width(100.dp))
+        Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(50)).background(C.Border)) {
+            Box(Modifier.fillMaxWidth(fraction).height(6.dp).clip(RoundedCornerShape(50)).background(color))
+        }
+        Text(value, fontSize = 12.sp, color = C.Muted)
     }
 }

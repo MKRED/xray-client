@@ -29,6 +29,17 @@ object XrayCore {
         AppLog.i(TAG, "Ядро: ${version()}")
     }
 
+    /**
+     * StartLoop записывает номер TUN-дескриптора в общую переменную окружения,
+     * поэтому запуски ядер (основного и временных для теста скорости) не должны пересекаться.
+     */
+    val startLock = Any()
+
+    /** Запустить ядро без TUN (для теста скорости). */
+    fun startIsolated(c: CoreController, config: String) {
+        synchronized(startLock) { c.startLoop(config, 0) }
+    }
+
     fun version(): String = runCatching { Libv2ray.checkVersionX() }.getOrDefault("?")
 
     fun newController(onStatus: (String) -> Unit): CoreController =

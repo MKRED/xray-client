@@ -87,7 +87,10 @@ fun PriorityBlocksList(vm: MainViewModel, modifier: Modifier) {
     LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         itemsIndexed(blocks, key = { _, b -> b.id }) { i, b ->
             val cands = Blocks.candidates(b, data, usable)
-            val working = cands.filter { Blocks.passes(b, delays[it.id]) }.sortedBy { delays[it.id] }
+            val working = cands.filter { Blocks.passes(b, delays[it.id]) }.let { w ->
+                if (data.metric == com.mkred.xrayclient.data.Metric.QUALITY) w.sortedByDescending { com.mkred.xrayclient.core.Quality.of(it, delays).score }
+                else w.sortedBy { delays[it.id] }
+            }
             val status = when {
                 Blocks.skipReason(b, mobile) != null -> BlockStatus.SKIPPED
                 i == activeIdx -> BlockStatus.ACTIVE
@@ -209,7 +212,7 @@ private fun BlockCard(
                     Row {
                         Text(p.name, fontSize = 13.sp, color = if (isCur) C.Text else C.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         Text(
-                            delayText(delays[p.id]) + if (isCur) " ✓" else "",
+                            metricText(p) + if (isCur) " ✓" else "",
                             fontSize = 13.sp, color = if (isCur) C.AccentText else C.Muted,
                             fontWeight = if (isCur) FontWeight.SemiBold else FontWeight.Normal,
                         )
@@ -222,7 +225,7 @@ private fun BlockCard(
             Text(
                 when {
                     cands.isEmpty() -> "Ни один сервер не подходит"
-                    best != null -> "${serversWord(cands.size)} · лучший ${delayText(delays[best.id])}"
+                    best != null -> "${serversWord(cands.size)} · лучший: ${metricText(best)}"
                     status == BlockStatus.NO_WORKING -> "${serversWord(cands.size)} · все недоступны, блок пропущен"
                     else -> "${serversWord(cands.size)} · нажмите «Проверить»"
                 },

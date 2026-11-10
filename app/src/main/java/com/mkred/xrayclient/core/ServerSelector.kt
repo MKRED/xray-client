@@ -1,6 +1,7 @@
 package com.mkred.xrayclient.core
 
 import com.mkred.xrayclient.data.AppStore
+import com.mkred.xrayclient.data.Metric
 import com.mkred.xrayclient.data.Profile
 import com.mkred.xrayclient.data.SelectionMode
 import com.mkred.xrayclient.data.SwitchKind
@@ -61,25 +62,43 @@ object ServerSelector {
         return Choice(p, if (current == null) SwitchKind.CONNECT else SwitchKind.SETTINGS, "ручной выбор")
     }
 
-    // ---- самый быстрый ----
+    /** Качество выше — лучше; минимальный выигрыш, ради которого переключаемся. */
+    private const val MIN_GAIN_QUALITY = 10
+
+    private fun quality() = AppStore.data.value.metric == Metric.QUALITY
+
+    /** Лучший сервер группы по текущей метрике (только отвечающие на пинг). */
+    private fun bestOf(list: List<Profile>, delays: Map<String, Long>, accept: (Profile) -> Boolean = { true }): Profile? {
+        val working = list.filter { (delays[it.id] ?: -1) > 0 && accept(it) }
+        return if (quality()) working.maxByOrNull { Quality.of(it, delays).score }
+        else working.minByOrNull { delays.getValue(it.id) }
+    }
+
+    // ---- самый быстрый / лучший ----
 
     private suspend fun fastest(current: Profile?): Choice? {
         val all = AppStore.usable.value
         val delays = XrayCore.measureAll(all, AppStore.data.value.testUrl)
-        val best = all.filter { (delays[it.id] ?: -1) > 0 }.minByOrNull { delays.getValue(it.id) }
+        val best = bestOf(all, delays)
         if (current == null) {
             val p = best ?: all.firstOrNull() ?: return null
-            return Choice(p, SwitchKind.CONNECT, "самый быстрый")
+            return Choice(p, SwitchKind.CONNECT, if (quality()) "лучшее качество" else "самый быстрый")
         }
         return betterInGroup(current, best, delays)
     }
 
-    /** Правило «заметно быстрее» или «текущий не отвечает». */
+    /** Правило «заметно лучше» или «текущий не отвечает». */
     private fun betterInGroup(current: Profile, best: Profile?, delays: Map<String, Long>): Choice? {
         best ?: return null
+        if (best.id == current.id) return null
         val cur = delays[current.id] ?: -1
         val bestDelay = delays[best.id] ?: return null
         if (cur <= 0) return Choice(best, SwitchKind.FAIL, "не отвечал")
+        if (quality()) {
+            val q = Quality.of(current, delays).score
+            val qb = Quality.of(best, delays).score
+            return if (qb >= q + MIN_GAIN_QUALITY) Choice(best, SwitchKind.FASTER, "качество $qb против $q") else null
+        }
         val muchFaster = bestDelay < cur * MIN_GAIN_RATIO && cur - bestDelay > MIN_GAIN_MS
         return if (muchFaster) Choice(best, SwitchKind.FASTER, "быстрее на ${cur - bestDelay} мс") else null
     }
@@ -108,7 +127,7 @@ object ServerSelector {
             val cands = Blocks.candidates(b, data, usable)
             if (cands.isEmpty()) continue
             measured(cands)
-            val best = cands.filter { Blocks.passes(b, delays[it.id]) }.minByOrNull { delays.getValue(it.id) }
+            val best = bestOf(cands, AppStore.delays.value + delays) { Blocks.passes(b, delays[it.id]) }
             if (best != null) {
                 targetIdx = i
                 targetBest = best
@@ -166,7 +185,7 @@ object ServerSelector {
             // Тот же блок — правило «заметно быстрее»
             else -> {
                 reset()
-                betterInGroup(current, target, delays)
+                betterInGroup(current, target, AppStore.delays.value + delays)
             }
         }
     }
