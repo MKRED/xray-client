@@ -56,6 +56,7 @@ fun HomeScreen(vm: MainViewModel, onToggle: () -> Unit, onOpenServers: () -> Uni
     val busy by vm.busy.collectAsStateWithLifecycle()
     val update by vm.update.collectAsStateWithLifecycle()
     val progress by vm.updateProgress.collectAsStateWithLifecycle()
+    val auto by vm.autoStatus.collectAsStateWithLifecycle()
 
     val on = vpn.status == VpnStatus.CONNECTED
     val connecting = vpn.status == VpnStatus.CONNECTING
@@ -129,6 +130,8 @@ fun HomeScreen(vm: MainViewModel, onToggle: () -> Unit, onOpenServers: () -> Uni
             Icon(Icons.Bolt, contentDescription = null, tint = C.AccentText, modifier = Modifier.size(16.dp))
             Text(modeLabel(data.mode, data.metric == com.mkred.xrayclient.data.Metric.QUALITY), color = C.AccentText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
+
+        auto?.takeIf { on && data.autoCheck }?.let { a -> AutoStatusChip(a) }
 
         Row(
             Modifier
@@ -258,4 +261,38 @@ fun modeLabel(mode: SelectionMode, quality: Boolean = false) = when (mode) {
 fun formatElapsed(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
     return "%02d:%02d:%02d".format(s / 3600, s % 3600 / 60, s % 60)
+}
+
+
+/** Статус автопроверки под кнопкой: «в норме», «ищем быстрее», «проблема в сети». */
+@Composable
+private fun AutoStatusChip(a: com.mkred.xrayclient.core.AutoStatus) {
+    val kind = a.kind
+    val (bg, edge, fg) = when (kind) {
+        com.mkred.xrayclient.core.AutoStatus.Kind.OK -> Triple(C.Surface, C.Border, C.Text)
+        com.mkred.xrayclient.core.AutoStatus.Kind.SEARCHING -> Triple(Color(0xFF2A2418), Color(0xFF4A3D22), C.Warn)
+        com.mkred.xrayclient.core.AutoStatus.Kind.NETWORK -> Triple(C.Surface, C.Border, C.Warn)
+    }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(a) { while (true) { now = System.currentTimeMillis(); delay(5000) } }
+    val ago = ((now - a.at) / 1000).let { if (it < 60) "$it с назад" else "${it / 60} мин назад" }
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(if (kind == com.mkred.xrayclient.core.AutoStatus.Kind.NETWORK) 16.dp else 50.dp))
+            .background(bg)
+            border(BorderStroke(1.dp, edge), RoundedCornerShape(if (kind == com.mkred.xrayclient.core.AutoStatus.Kind.NETWORK) 16.dp else 50.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        when (kind) {
+            com.mkred.xrayclient.core.AutoStatus.Kind.OK -> Box(Modifier.size(8.dp).clip(CircleShape).background(C.Accent))
+            com.mkred.xrayclient.core.AutoStatus.Kind.SEARCHING -> CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = C.Warn)
+            com.mkred.xrayclient.core.AutoStatus.Kind.NETWORK -> Text("!", color = C.Warn, fontWeight = FontWeight.Bold)
+        }
+        Text(
+            if (kind == com.mkred.xrayclient.core.AutoStatus.Kind.OK) "${a.text} · $ago" else a.text,
+            fontSize = 13.sp, color = fg,
+        )
+    }
 }

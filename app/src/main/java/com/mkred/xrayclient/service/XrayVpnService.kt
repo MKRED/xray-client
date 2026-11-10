@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.content.ContextCompat
 import com.mkred.xrayclient.R
+import com.mkred.xrayclient.core.AutoCheck
 import com.mkred.xrayclient.core.Net
 import com.mkred.xrayclient.core.NetworkState
 import com.mkred.xrayclient.core.ServerSelector
@@ -120,6 +121,8 @@ class XrayVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        AutoCheck.stop()
+        unwatchScreen()
         unwatchNetwork()
         stopCore()
         runCatching { tun?.close() }
@@ -302,6 +305,7 @@ class XrayVpnService : VpnService() {
                 delay(1000)
                 val (down, up) = queryTraffic()
                 Stats.addTraffic(down, up, current?.id, current?.name)
+                AutoCheck.onSecond(down, up)
                 if (System.currentTimeMillis() - lastSave > 60_000) {
                     Stats.save()
                     lastSave = System.currentTimeMillis()
@@ -369,10 +373,48 @@ class XrayVpnService : VpnService() {
         networkCallback = null
     }
 
+    private val autoHost = object : AutoCheck.Host {
+        override val current: Profile? get() = this@XrayVpnService.current
+        override suspend fun switchTo(p: Profile, kind: SwitchKind, reason: String) {
+            lock.withLock {
+                if (tun != null && this@XrayVpnService.current?.id != p.id) this@XrayVpnService.switchTo(p, kind, reason)
+            }
+        }
+    }
+
+    private var screenReceiver: android.content.BroadcastReceiver? = null
+
+    /** Экран включили — сразу проверяем, выключили — проверяем реже. */
+    private fun watchScreen() {
+        if (screenReceiver != null) return
+        AutoCheck.screenOn = getSystemService(android.os.PowerManager::class.java)?.isInteractive != false
+        val r = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: Context?, i: Intent?) {
+                when (i?.action) {
+                    Intent.ACTION_SCREEN_ON -> { AutoCheck.screenOn = true; AutoCheck.requestProbe() }
+                    Intent.ACTION_SCREEN_OFF -> AutoCheck.screenOn = false
+                }
+            }
+        }
+        val f = android.content.IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
+        }
+        runCatching { ContextCompat.registerReceiver(this, r, f, ContextCompat.RECEIVER_NOT_EXPORTED) }
+            .onSuccess { screenReceiver = r }
+    }
+
+    private fun unwatchScreen() {
+        screenReceiver?.let { runCatching { unregisterReceiver(it) } }
+        screenReceiver = null
+    }
+
     private fun startMonitor() {
         startNotifier()
         startTraffic()
         watchNetwork()
+        watchScreen()
+        AutoCheck.start(scope, autoHost)
         monitor?.cancel()
         monitor = scope.launch {
             while (isActive) {
@@ -398,6 +440,8 @@ class XrayVpnService : VpnService() {
         monitor?.cancel()
         notifier?.cancel()
         traffic?.cancel()
+        AutoCheck.stop()
+        unwatchScreen()
         unwatchNetwork()
         stopCore()
         Stats.save()

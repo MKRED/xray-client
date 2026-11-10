@@ -247,11 +247,16 @@ fun StatsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     Text(formatTime(e.ts), fontSize = 12.sp, color = C.Muted, modifier = Modifier.width(48.dp).padding(top = 2.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            if (e.kind == SwitchKind.CONNECT) "Подключение · ${e.to}" else "${e.from ?: "—"} → ${e.to}",
+                            when (e.kind) {
+                                SwitchKind.CONNECT -> "Подключение · ${e.to}"
+                                SwitchKind.NETWORK -> e.to
+                                else -> "${e.from ?: "—"} → ${e.to}"
+                            },
                             fontSize = 13.sp,
                         )
                         val (bg, fg) = when (e.kind) {
-                            SwitchKind.FAIL -> Color(0xFF3A2020) to C.Error
+                            SwitchKind.FAIL, SwitchKind.SLOW, SwitchKind.FREEZE -> Color(0xFF3A2020) to C.Error
+                            SwitchKind.NETWORK -> Color(0xFF2A2418) to C.Warn
                             SwitchKind.FASTER, SwitchKind.PRIORITY -> C.AccentBg to C.AccentText
                             else -> C.Chip to Color(0xFFB9C3D4)
                         }

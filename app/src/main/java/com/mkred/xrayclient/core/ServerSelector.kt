@@ -69,7 +69,9 @@ object ServerSelector {
 
     /** Лучший сервер группы по текущей метрике (только отвечающие на пинг). */
     private fun bestOf(list: List<Profile>, delays: Map<String, Long>, accept: (Profile) -> Boolean = { true }): Profile? {
-        val working = list.filter { (delays[it.id] ?: -1) > 0 && accept(it) }
+        val alive = list.filter { (delays[it.id] ?: -1) > 0 && accept(it) }
+        // Серверы, которые автопроверка признала медленными, временно не выбираем по пингу
+        val working = alive.filterNot { AutoCheck.isPenalized(it.id) }.ifEmpty { alive }
         return if (quality()) working.maxByOrNull { Quality.of(it, delays).score }
         else working.minByOrNull { delays.getValue(it.id) }
     }

@@ -77,6 +77,16 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun stopSpeedTest() = com.mkred.xrayclient.core.SpeedTest.stop()
 
+    val autoStatus = com.mkred.xrayclient.core.AutoCheck.status
+
+    fun setAutoCheck(on: Boolean) {
+        AppLog.i("Settings", "Автопроверка скорости: $on")
+        AppStore.update { it.copy(autoCheck = on) }
+        if (on) com.mkred.xrayclient.core.AutoCheck.requestProbe()
+    }
+
+    fun setSlowMbps(v: Int) = AppStore.update { it.copy(slowMbps = v) }
+
     // ---- российские сайты напрямую ----
 
     val geoUpdating = MutableStateFlow(false)

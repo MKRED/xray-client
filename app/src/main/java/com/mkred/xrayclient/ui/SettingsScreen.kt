@@ -129,6 +129,55 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             )
         }
 
+        // ---- автопроверка скорости ----
+        Panel {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Автопроверка скорости", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text("Следит за текущим сервером и переходит на более быстрый, если этот просел или «замёрз»", fontSize = 12.sp, color = C.Muted)
+                }
+                androidx.compose.material3.Switch(
+                    checked = data.autoCheck,
+                    onCheckedChange = { vm.setAutoCheck(it) },
+                    colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Accent, checkedThumbColor = C.Bg),
+                )
+            }
+            if (data.autoCheck) {
+                Text("Считать сервер медленным, если ниже", fontSize = 13.sp, color = C.Muted)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(2, 5, 10).forEach { v ->
+                        val sel = data.slowMbps == v
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (sel) C.AccentBg else C.Chip)
+                                .then(if (sel) Modifier.border(2.dp, C.Accent, RoundedCornerShape(12.dp)) else Modifier)
+                                .clickable(role = Role.RadioButton) { vm.setSlowMbps(v) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("$v Мбит/с", fontSize = 14.sp, color = if (sel) C.AccentText else C.Text, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal)
+                        }
+                    }
+                }
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.Surface2).padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Как это работает", fontSize = 12.sp, color = C.Muted)
+                    StepRow("1", C.AccentText, "Идёт загрузка и скорость хорошая — ничего не делаем")
+                    StepRow("2", C.AccentText, "Трафика нет — лёгкая проверка раз в 30 с, при выключенном экране раз в 5 мин")
+                    StepRow("3", C.Warn, "Медленно или «заморозка» — замер 3 лучших кандидатов, если нужно ещё 3")
+                    StepRow("4", C.Warn, "Нашёлся заметно быстрее (×1,5) — переключаемся. Нет — остаёмся, повтор через 10 мин")
+                    Text(
+                        "≈ 100–150 МБ в сутки · кандидаты меряются пакетом из «Тест скорости» · подписки с запретом теста не проверяются · в режиме «Вручную» не работает",
+                        fontSize = 11.sp, color = Color(0xFF6B7280),
+                    )
+                }
+            }
+        }
+
         Panel {
             Text("Проверка серверов во время работы", fontWeight = FontWeight.SemiBold)
             Text("Как часто проверять, не пора ли переключиться", fontSize = 12.sp, color = C.Muted)
@@ -361,5 +410,14 @@ private fun WeightRow(label: String, fraction: Float, color: Color, value: Strin
             Box(Modifier.fillMaxWidth(fraction).height(6.dp).clip(RoundedCornerShape(50)).background(color))
         }
         Text(value, fontSize = 12.sp, color = C.Muted)
+    }
+}
+
+
+@Composable
+private fun StepRow(n: String, color: Color, text: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(n, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = color)
+        Text(text, fontSize = 13.sp)
     }
 }

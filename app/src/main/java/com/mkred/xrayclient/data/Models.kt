@@ -160,6 +160,10 @@ data class AppData(
     val splitApps: Set<String> = emptySet(),
     /** Метрика: задержка или качество (скорость + пинг + стабильность). */
     val metric: Metric = Metric.LATENCY,
+    /** Автопроверка скорости текущего сервера. */
+    val autoCheck: Boolean = false,
+    /** Порог «медленно» для автопроверки, Мбит/с. */
+    val slowMbps: Int = 5,
     /** Размер пакета для теста скорости, МБ: 1, 5, 10 или 25. */
     val speedTestMb: Int = 5,
     /** Российские сайты — напрямую, мимо VPN. */

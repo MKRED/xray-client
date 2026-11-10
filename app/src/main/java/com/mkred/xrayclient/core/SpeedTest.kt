@@ -117,7 +117,12 @@ object SpeedTest {
         error("ядро не открыло порт")
     }
 
-    private suspend fun download(port: Int, size: Long, onProgress: (Long, Float) -> Unit): Float {
+    internal suspend fun download(
+        port: Int,
+        size: Long,
+        onProgress: (Long, Float) -> Unit,
+        timeoutMs: Long = TIMEOUT_MS,
+    ): Float {
         val conn = URL(url(size)).openConnection(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", port))) as HttpURLConnection
         conn.connectTimeout = 10_000
         conn.readTimeout = 10_000
@@ -128,7 +133,7 @@ object SpeedTest {
             var bytes = 0L
             var start = 0L
             var lastReport = 0L
-            val deadline = System.currentTimeMillis() + TIMEOUT_MS
+            val deadline = System.currentTimeMillis() + timeoutMs
             conn.inputStream.use { input ->
                 while (currentCoroutineContext().isActive) {
                     val n = input.read(buf)
@@ -146,7 +151,7 @@ object SpeedTest {
             currentCoroutineContext().ensureActive()
             val elapsed = System.currentTimeMillis() - start
             onProgress(bytes, mbps(bytes, elapsed))
-            return if (bytes < 64 * 1024) 0f else mbps(bytes, elapsed)
+            return if (bytes < minOf(64 * 1024L, size / 2)) 0f else mbps(bytes, elapsed)
         } finally {
             conn.disconnect()
         }

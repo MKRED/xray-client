@@ -29,7 +29,15 @@ data class UsageBucket(val id: String, val hour: Long, val seconds: Int, val dow
 /** Итог по серверу за период — для «Топ серверов». */
 data class ServerUsage(val id: String, val name: String, val seconds: Long, val traffic: Traffic)
 
-enum class SwitchKind { CONNECT, FAIL, FASTER, PRIORITY, SETTINGS }
+enum class SwitchKind {
+    CONNECT, FAIL, FASTER, PRIORITY, SETTINGS,
+
+    /** Автопроверка: сервер медленный / «замёрз». */
+    SLOW, FREEZE,
+
+    /** Автопроверка не нашла лучше — запись без переключения. */
+    NETWORK,
+}
 
 data class SwitchEvent(val ts: Long, val from: String?, val to: String, val kind: SwitchKind, val reason: String)
 
