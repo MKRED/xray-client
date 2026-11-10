@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -137,7 +139,7 @@ private fun SourcesList(vm: MainViewModel, onOpenSub: (String) -> Unit, onOpenSe
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("${usable.size}", "в работе", Modifier.weight(1f), C.AccentText)
             StatTile("${all.size}", "всего серверов", Modifier.weight(1f))
             StatTile("$sources", sourcesWord(sources), Modifier.weight(1f))
@@ -292,7 +294,7 @@ private fun SubscriptionDetail(
             Text("Подписка выключена: её серверы обновляются, но не используются для подключения.", fontSize = 12.sp, color = C.Warn)
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("${active.size}", "в работе", Modifier.weight(1f), C.AccentText, suffix = "/${servers.size}")
             StatTile(best?.toString() ?: "—", "лучший пинг", Modifier.weight(1f), suffix = if (best != null) " мс" else "")
             StatTile(if (sub.updatedAt > 0) time(sub.updatedAt) else "—", "обновлена", Modifier.weight(1f))
@@ -315,9 +317,9 @@ private fun SubscriptionDetail(
             Text("Последнее обновление не удалось: $it", fontSize = 12.sp, color = C.Error)
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ActionTile("Обновить", Icons.Refresh, Modifier.weight(1f), enabled = !busy) { vm.refreshSubscription(sub.id) }
-            ActionTile("Переименовать", Icons.Pencil, Modifier.weight(1f)) { rename = true }
+            ActionTile("Изменить имя", Icons.Pencil, Modifier.weight(1f)) { rename = true }
             ActionTile("Копировать ссылку", Icons.Copy, Modifier.weight(1f)) {
                 copyToClipboard(context, sub.url)
                 vm.message.value = "Ссылка на подписку скопирована"
@@ -487,7 +489,7 @@ private fun ServerDetail(vm: MainViewModel, id: String, onToggleVpn: () -> Unit,
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val d = delays[p.id]
             StatTile(
                 when { d == null -> "—"; d < 0 -> "нет"; else -> "$d" }, "пинг сейчас", Modifier.weight(1f),
@@ -513,7 +515,7 @@ private fun ServerDetail(vm: MainViewModel, id: String, onToggleVpn: () -> Unit,
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PrimaryButton(
                 if (current) "Подключено" else "Подключиться",
                 onClick = {
@@ -554,8 +556,8 @@ private fun ServerDetail(vm: MainViewModel, id: String, onToggleVpn: () -> Unit,
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (isManual) ActionTile("Переименовать", Icons.Pencil, Modifier.weight(1f)) { rename = true }
+        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (isManual) ActionTile("Изменить имя", Icons.Pencil, Modifier.weight(1f)) { rename = true }
             ActionTile("Копировать ссылку", Icons.Copy, Modifier.weight(1f)) {
                 copyToClipboard(context, p.link)
                 vm.message.value = "Ссылка на сервер скопирована"
@@ -624,9 +626,9 @@ private fun SquareButton(
 @Composable
 private fun StatTile(value: String, label: String, modifier: Modifier, color: Color = C.Text, suffix: String = "") {
     Column(
-        modifier.clip(RoundedCornerShape(14.dp)).background(C.Surface)
+        modifier.fillMaxHeight().clip(RoundedCornerShape(14.dp)).background(C.Surface)
             .border(BorderStroke(1.dp, C.Border), RoundedCornerShape(14.dp)).padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
     ) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = color, maxLines = 1)
@@ -741,7 +743,8 @@ private fun AppSwitch(checked: Boolean, enabled: Boolean = true, small: Boolean 
 private fun ActionTile(label: String, icon: ImageVector, modifier: Modifier, enabled: Boolean = true, onClick: () -> Unit) {
     Column(
         modifier
-            .heightIn(min = 68.dp)
+            .fillMaxHeight()
+            .heightIn(min = 72.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(C.Surface)
             .border(BorderStroke(1.dp, C.Border), RoundedCornerShape(14.dp))
