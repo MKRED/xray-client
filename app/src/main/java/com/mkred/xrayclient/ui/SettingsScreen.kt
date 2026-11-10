@@ -145,7 +145,7 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             if (data.autoCheck) {
                 Text("Считать сервер медленным, если ниже", fontSize = 13.sp, color = C.Muted)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(2, 5, 10).forEach { v ->
+                    listOf(1, 2, 5, 10).forEach { v ->
                         val sel = data.slowMbps == v
                         Box(
                             Modifier
