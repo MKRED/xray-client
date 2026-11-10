@@ -137,12 +137,19 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     Text("Следит за текущим сервером и переходит на более быстрый, если этот просел или «замёрз»", fontSize = 12.sp, color = C.Muted)
                 }
                 androidx.compose.material3.Switch(
-                    checked = data.autoCheck,
+                    checked = data.autoCheck && data.metric == Metric.QUALITY,
+                    enabled = data.metric == Metric.QUALITY,
                     onCheckedChange = { vm.setAutoCheck(it) },
                     colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Accent, checkedThumbColor = C.Bg),
                 )
             }
-            if (data.autoCheck) {
+            if (data.metric != Metric.QUALITY) {
+                Text(
+                    "Работает только в режиме «Качество» — в режиме «Задержка» серверы оцениваются только по пингу, без тестов и трафика.",
+                    fontSize = 12.sp, color = C.Warn,
+                )
+            }
+            if (data.autoCheck && data.metric == Metric.QUALITY) {
                 Text("Считать сервер медленным, если ниже", fontSize = 13.sp, color = C.Muted)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(1, 2, 5, 10).forEach { v ->
@@ -171,7 +178,7 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     StepRow("3", C.Warn, "Медленно или «заморозка» — замер 3 лучших кандидатов, если нужно ещё 3")
                     StepRow("4", C.Warn, "Нашёлся заметно быстрее (×1,5) — переключаемся. Нет — остаёмся, повтор через 10 мин")
                     Text(
-                        "≈ 100–150 МБ в сутки · кандидаты меряются пакетом из «Тест скорости» · подписки с запретом теста не проверяются · в режиме «Вручную» не работает",
+                        "≈ 100–150 МБ в сутки · кандидаты меряются пакетом из «Тест скорости» · каждый замер сразу меняет качество сервера · подписки с запретом теста не проверяются · в режиме «Вручную» не работает",
                         fontSize = 11.sp, color = Color(0xFF6B7280),
                     )
                 }

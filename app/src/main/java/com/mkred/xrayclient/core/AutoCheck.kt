@@ -36,8 +36,9 @@ data class AutoStatus(val kind: Kind, val text: String, val at: Long = System.cu
  *     переход на того, кто быстрее в 1,5 раза и хотя бы на 3 Мбит/с.
  *     Не нашли — остаёмся, «похоже, проблема в сети», перерыв 10 мин
  *     (заморозку перерыв не останавливает).
- *  Серверы, с которых ушли или которые оказались медленными, на 10 мин
- *  исключаются из выбора по пингу — иначе он вернул бы нас обратно.
+ *  Работает только в режиме «Качество»: каждый замер сразу меняет оценку сервера,
+ *  поэтому выбор по качеству сам не вернёт нас на медленный или «замёрзший» сервер.
+ *  В режиме «Задержка» — только пинг, без тестов и трафика.
  */
 object AutoCheck {
     private const val TAG = "AutoCheck"
@@ -45,7 +46,6 @@ object AutoCheck {
     private const val PROBE_INTERVAL_ON = 30_000L
     private const val PROBE_INTERVAL_OFF = 300_000L
     private const val COOLDOWN = 10 * 60_000L
-    private const val PENALTY = 10 * 60_000L
     private const val FREEZE_SECONDS = 8
     private const val BUSY_BYTES_PER_SEC = 125_000L // ~1 Мбит/с — «идёт загрузка»
     private const val BATCH = 3
@@ -54,8 +54,6 @@ object AutoCheck {
     private val _status = MutableStateFlow<AutoStatus?>(null)
     val status: StateFlow<AutoStatus?> = _status.asStateFlow()
 
-    /** id сервера → до какого времени он исключён из выбора по пингу. */
-    private val penalties = HashMap<String, Long>()
 
     @Volatile var screenOn = true
     @Volatile private var probeNow = false
@@ -74,13 +72,6 @@ object AutoCheck {
         suspend fun switchTo(p: Profile, kind: SwitchKind, reason: String)
     }
 
-    fun isPenalized(id: String): Boolean = synchronized(penalties) {
-        val until = penalties[id] ?: return false
-        if (System.currentTimeMillis() > until) { penalties.remove(id); false } else true
-    }
-
-    private fun penalize(id: String) = synchronized(penalties) { penalties[id] = System.currentTimeMillis() + PENALTY }
-
     fun requestProbe() { probeNow = true }
 
     /** Каждую секунду из сервиса: байты через прокси за секунду. */
@@ -97,8 +88,9 @@ object AutoCheck {
             while (isActive) {
                 delay(1000)
                 val d = AppStore.data.value
-                if (!d.autoCheck || d.mode == SelectionMode.MANUAL || SpeedTest.run.value != null) {
-                    if (!d.autoCheck) _status.value = null
+                val enabled = d.autoCheck && d.metric == Metric.QUALITY
+                if (!enabled || d.mode == SelectionMode.MANUAL || SpeedTest.run.value != null) {
+                    if (!enabled) _status.value = null
                     continue
                 }
                 val cur = host.current ?: continue
@@ -157,6 +149,8 @@ object AutoCheck {
         when {
             probe <= 0f -> {
                 val why = if (wasFreeze) "заморозка: данные не идут" else "не отвечает на проверку"
+                // Неудачный замер — оценка качества сервера падает до «≈», выбор на него не вернётся
+                Stats.recordSpeed(cur.id, 0f, AppStore.data.value.speedTestMb)
                 // Заморозка важнее перерыва, но не чаще раза в 2 мин — иначе при плохой сети будем жечь трафик
                 search(host, cur, 0f, SwitchKind.FREEZE, why, ignoreCooldown = now - lastSearchAt > 120_000)
             }
@@ -199,10 +193,8 @@ object AutoCheck {
                 val mbps = SpeedTest.measure(p, size * 1_000_000L)
                 Stats.recordSpeed(p.id, mbps, size)
                 checked++
-                if (mbps < AppStore.data.value.slowMbps) penalize(p.id)
                 val better = mbps >= curMbps * 1.5f && mbps >= curMbps + 3f
                 if (better) {
-                    penalize(cur.id)
                     _status.value = AutoStatus(AutoStatus.Kind.OK, "Переключились · ${fmt(mbps)}")
                     host.switchTo(p, kind, "$why → ${fmt(mbps)}")
                     nextProbeAt = System.currentTimeMillis() + interval()
@@ -231,10 +223,8 @@ object AutoCheck {
         val data = AppStore.data.value
         val usable = AppStore.usable.value
         val delays = AppStore.delays.value
-        fun ok(p: Profile) = p.id != cur.id && (delays[p.id] ?: -1) > 0 && AppStore.speedTestAllowed(p) && !isPenalized(p.id)
-        fun rank(list: List<Profile>) =
-            if (data.metric == Metric.QUALITY) list.sortedByDescending { Quality.of(it, delays).score }
-            else list.sortedBy { delays[it.id] ?: Long.MAX_VALUE }
+        fun ok(p: Profile) = p.id != cur.id && (delays[p.id] ?: -1) > 0 && AppStore.speedTestAllowed(p)
+        fun rank(list: List<Profile>) = list.sortedByDescending { Quality.of(it, delays).score }
 
         val pool: List<Profile> = when (data.mode) {
             SelectionMode.PRIORITY -> {

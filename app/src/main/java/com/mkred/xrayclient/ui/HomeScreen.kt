@@ -131,7 +131,7 @@ fun HomeScreen(vm: MainViewModel, onToggle: () -> Unit, onOpenServers: () -> Uni
             Text(modeLabel(data.mode, data.metric == com.mkred.xrayclient.data.Metric.QUALITY), color = C.AccentText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
 
-        auto?.takeIf { on && data.autoCheck }?.let { a -> AutoStatusChip(a) }
+        auto?.takeIf { on && data.autoCheck && data.metric == com.mkred.xrayclient.data.Metric.QUALITY }?.let { a -> AutoStatusChip(a) }
 
         Row(
             Modifier
