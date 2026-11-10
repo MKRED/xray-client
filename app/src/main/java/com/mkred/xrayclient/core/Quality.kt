@@ -9,7 +9,7 @@ import com.mkred.xrayclient.data.Stats
 /**
  * Качество сервера 0–100:
  *  - скорость     50 баллов: 50 Мбит/с и выше — максимум (только замер младше 24 ч);
- *  - пинг         30 баллов: 50 мс и ниже — максимум, 300 мс и выше — ноль;
+ *  - пинг         30 баллов: 50 мс и ниже — максимум, 500 мс и выше — ноль;
  *  - стабильность 20 баллов: доступность за 24 ч.
  * Без свежего замера скорости оценка неполная (максимум 50) и помечается «≈».
  * Недоступный сейчас сервер — 0.
@@ -52,7 +52,7 @@ object Quality {
         val uptime = if (total > 0) ok.toFloat() / total else null
 
         val pingPts = if (delay == null || delay <= 0) 0 else
-            (((300f - delay) / 250f).coerceIn(0f, 1f) * 30).toInt()
+            (((500f - delay) / 450f).coerceIn(0f, 1f) * 30).toInt()
         // Без истории: считаем стабильным, если сейчас отвечает
         val stabilityPts = ((uptime ?: if (delay != null && delay > 0) 1f else 0f) * 20).toInt()
         val speedPts = fresh?.let { ((it.mbps / SPEED_MAX_MBPS).coerceIn(0f, 1f) * 50).toInt() } ?: 0
