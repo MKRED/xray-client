@@ -280,7 +280,7 @@ private fun AutoStatusChip(a: com.mkred.xrayclient.core.AutoStatus) {
         Modifier
             .clip(RoundedCornerShape(if (kind == com.mkred.xrayclient.core.AutoStatus.Kind.NETWORK) 16.dp else 50.dp))
             .background(bg)
-            border(BorderStroke(1.dp, edge), RoundedCornerShape(if (kind == com.mkred.xrayclient.core.AutoStatus.Kind.NETWORK) 16.dp else 50.dp))
+            .border(BorderStroke(1.dp, edge), RoundedCornerShape(if (kind == com.mkred.xrayclient.core.AutoStatus.Kind.NETWORK) 16.dp else 50.dp))
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
