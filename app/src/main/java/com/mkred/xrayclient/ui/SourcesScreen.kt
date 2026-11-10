@@ -51,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -769,17 +770,22 @@ private fun FlowChips(content: @Composable () -> Unit) {
 
 @Composable
 private fun TextInputDialog(title: String, initial: String, hint: String? = null, onDone: (String) -> Unit, onClose: () -> Unit) {
-    var text by remember { mutableStateOf(initial) }
+    var text by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(initial, androidx.compose.ui.text.TextRange(initial.length))) }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    // Курсор сразу в поле — клавиатура открывается сама
+    LaunchedEffect(Unit) { delay(100); runCatching { focus.requestFocus() } }
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text(title) },
         text = {
             OutlinedTextField(
-                text, { text = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                text, { text = it }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                placeholder = { Text(if (initial.isEmpty()) "Введите слово" else "Название") },
                 supportingText = if (hint != null) { { Text(hint) } } else null,
             )
         },
-        confirmButton = { TextButton(onClick = { onDone(text) }, enabled = text.isNotBlank()) { Text("Сохранить") } },
+        confirmButton = { TextButton(onClick = { onDone(text.text) }, enabled = text.text.isNotBlank()) { Text("Сохранить") } },
         dismissButton = { TextButton(onClick = onClose) { Text("Отмена") } },
     )
 }

@@ -40,7 +40,10 @@ fun AppTheme(content: @Composable () -> Unit) {
             onSurface = C.Text,
             surfaceVariant = C.Chip,
             onSurfaceVariant = C.Muted,
-            outline = C.Border,
+            // Рамки полей ввода и кнопок: заметные и на фоне карточек, и на фоне диалогов
+            outline = Color(0xFF5A6070),
+            outlineVariant = C.Border,
+            surfaceContainerHigh = Color(0xFF1D2128),
             error = C.Error,
         ),
         content = content,
