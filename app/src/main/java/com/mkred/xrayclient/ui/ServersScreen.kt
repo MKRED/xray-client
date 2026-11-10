@@ -49,7 +49,6 @@ fun ServersScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val delays by vm.delays.collectAsStateWithLifecycle()
     val vpn by vm.vpn.collectAsStateWithLifecycle()
     val testing by vm.testing.collectAsStateWithLifecycle()
-    var addDialog by remember { mutableStateOf(false) }
 
     val priorityMode = data.mode == SelectionMode.PRIORITY
 
@@ -126,44 +125,14 @@ fun ServersScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             if (hidden > 0) {
                 item {
                     Text(
-                        "Не используется серверов: $hidden (исключены или подписка выключена). Настроить — на вкладке «Подписки».",
+                        "Не используется серверов: $hidden (исключены или подписка выключена). Настроить и добавить новые — на вкладке «Источники».",
                         fontSize = 12.sp, color = C.Muted, modifier = Modifier.padding(vertical = 4.dp),
                     )
-                }
-            }
-            item {
-                OutlinedButton(
-                    onClick = { addDialog = true },
-                    modifier = Modifier.fillMaxWidth().height(48.dp).padding(bottom = 0.dp),
-                    shape = RoundedCornerShape(14.dp),
-                ) {
-                    Icon(Icons.Plus, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("  Добавить ссылку", color = C.Text)
                 }
             }
         }
     }
 
-    if (addDialog) {
-        var text by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { addDialog = false },
-            title = { Text("Добавить сервер") },
-            text = {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    label = { Text("vless://, vmess://, trojan://, ss://") },
-                    minLines = 3,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { vm.addLinks(text); addDialog = false }, enabled = text.isNotBlank()) { Text("Добавить") }
-            },
-            dismissButton = { TextButton(onClick = { addDialog = false }) { Text("Отмена") } },
-        )
-    }
 }
 
 @Composable

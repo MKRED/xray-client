@@ -50,7 +50,9 @@ object AppStore {
     private fun set(value: AppData, save: Boolean) {
         _data.value = value
         _profiles.value = value.profiles.mapNotNull { stored ->
-            LinkParser.parse(stored.link)?.copy(subscriptionId = stored.subscriptionId)
+            LinkParser.parse(stored.link)?.let { p ->
+                p.copy(subscriptionId = stored.subscriptionId, name = stored.name ?: p.name)
+            }
         }.distinctBy { it.id }
         _usable.value = _profiles.value.filterNot { isExcluded(it, value) }
         if (save) runCatching { file.writeText(toJson(value).toString()) }
@@ -81,6 +83,17 @@ object AppStore {
 
     fun setExcluded(ids: Collection<String>, excluded: Boolean) = update { d ->
         d.copy(excluded = if (excluded) d.excluded + ids else d.excluded - ids.toSet())
+    }
+
+    /** Переименовать сервер, добавленный вручную. */
+    fun renameProfile(id: String, name: String) = update { d ->
+        d.copy(profiles = d.profiles.map { s ->
+            if (s.subscriptionId == null && LinkParser.parse(s.link)?.id == id) s.copy(name = name.trim().ifEmpty { null }) else s
+        })
+    }
+
+    fun renameSubscription(id: String, name: String) = update { d ->
+        d.copy(subscriptions = d.subscriptions.map { if (it.id == id && name.isNotBlank()) it.copy(name = name.trim()) else it })
     }
 
     fun setSubscriptionEnabled(id: String, enabled: Boolean) = update { d ->
@@ -133,7 +146,11 @@ object AppStore {
         })
         put("profiles", JSONArray().apply {
             d.profiles.forEach { p ->
-                put(JSONObject().apply { put("link", p.link); p.subscriptionId?.let { put("sub", it) } })
+                put(JSONObject().apply {
+                    put("link", p.link)
+                    p.subscriptionId?.let { put("sub", it) }
+                    p.name?.let { put("name", it) }
+                })
             }
         })
         put("mode", d.mode.name)
@@ -177,7 +194,7 @@ object AppStore {
             )
         }
         val profiles = o.optJSONArray("profiles").objects().map {
-            StoredProfile(it.getString("link"), it.optString("sub").ifEmpty { null })
+            StoredProfile(it.getString("link"), it.optString("sub").ifEmpty { null }, it.optString("name").ifEmpty { null })
         }
         val defaults = AppData()
         return AppData(

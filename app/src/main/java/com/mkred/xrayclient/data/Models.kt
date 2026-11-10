@@ -133,6 +133,8 @@ data class Subscription(
 data class StoredProfile(
     val link: String,
     val subscriptionId: String?,
+    /** Своё название (только для серверов, добавленных вручную). */
+    val name: String? = null,
 )
 
 data class AppData(

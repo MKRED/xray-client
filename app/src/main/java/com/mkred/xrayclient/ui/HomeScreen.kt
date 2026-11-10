@@ -111,7 +111,7 @@ fun HomeScreen(vm: MainViewModel, onToggle: () -> Unit, onOpenServers: () -> Uni
                     on -> "В сети ${formatElapsed(now - vpn.connectedAt)}"
                     connecting -> vpn.message ?: ""
                     vpn.message != null -> vpn.message!!
-                    profiles.isEmpty() -> "Добавьте подписку на вкладке «Подписки»"
+                    profiles.isEmpty() -> "Добавьте подписку или сервер на вкладке «Источники»"
                     else -> "Нажмите, чтобы подключиться"
                 },
                 fontSize = 14.sp,

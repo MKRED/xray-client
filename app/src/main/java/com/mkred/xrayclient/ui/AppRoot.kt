@@ -26,7 +26,7 @@ private data class Tab(val title: String, val icon: ImageVector)
 private val tabs = listOf(
     Tab("Главная", Icons.Power),
     Tab("Серверы", Icons.Servers),
-    Tab("Подписки", Icons.Link),
+    Tab("Источники", Icons.Link),
     Tab("Статистика", Icons.Chart),
     Tab("Настройки", Icons.Settings),
 )
@@ -71,7 +71,7 @@ fun AppRoot(vm: MainViewModel, onToggleVpn: () -> Unit) {
         when (tab) {
             0 -> HomeScreen(vm, onToggleVpn, onOpenServers = { tab = 1 }, modifier = m)
             1 -> ServersScreen(vm, m)
-            2 -> SubscriptionsScreen(vm, m)
+            2 -> SourcesScreen(vm, onToggleVpn, m)
             3 -> StatsScreen(vm, m)
             else -> SettingsScreen(vm, m)
         }

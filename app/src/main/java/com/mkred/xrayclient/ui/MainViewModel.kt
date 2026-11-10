@@ -147,7 +147,32 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         busy.value = false
     }
 
-    fun removeSubscription(id: String) = Subscriptions.remove(id)
+    fun removeSubscription(id: String) {
+        AppLog.i("Settings", "Подписка удалена: $id")
+        Subscriptions.remove(id)
+        XrayVpnService.reselect(app)
+    }
+
+    fun renameProfile(id: String, name: String) = AppStore.renameProfile(id, name)
+
+    fun renameSubscription(id: String, name: String) = AppStore.renameSubscription(id, name)
+
+    /** Подключиться к конкретному серверу: ручной режим на него. */
+    fun connectTo(id: String) {
+        AppLog.i("Settings", "Подключение к выбранному серверу")
+        AppStore.update { it.copy(selectedId = id, mode = SelectionMode.MANUAL) }
+        XrayVpnService.reselect(app)
+    }
+
+    /** Текст из буфера: ссылка на подписку или ссылки на серверы. */
+    fun addFromClipboard(text: String?) {
+        val t = text?.trim().orEmpty()
+        when {
+            t.isEmpty() -> message.value = "Буфер обмена пуст"
+            t.startsWith("http://") || t.startsWith("https://") -> addSubscription(t, "")
+            else -> addLinks(t)
+        }
+    }
 
     fun setExcluded(ids: Collection<String>, excluded: Boolean) {
         AppLog.i("Settings", (if (excluded) "Исключены" else "Включены") + " серверы: ${ids.size}")
