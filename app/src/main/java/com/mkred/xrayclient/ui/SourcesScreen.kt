@@ -319,7 +319,7 @@ private fun SubscriptionDetail(
 
         Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ActionTile("Обновить", Icons.Refresh, Modifier.weight(1f), enabled = !busy) { vm.refreshSubscription(sub.id) }
-            ActionTile("Изменить имя", Icons.Pencil, Modifier.weight(1f)) { rename = true }
+            ActionTile("Переименовать", Icons.Pencil, Modifier.weight(1f)) { rename = true }
             ActionTile("Копировать ссылку", Icons.Copy, Modifier.weight(1f)) {
                 copyToClipboard(context, sub.url)
                 vm.message.value = "Ссылка на подписку скопирована"
@@ -557,7 +557,7 @@ private fun ServerDetail(vm: MainViewModel, id: String, onToggleVpn: () -> Unit,
         }
 
         Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (isManual) ActionTile("Изменить имя", Icons.Pencil, Modifier.weight(1f)) { rename = true }
+            if (isManual) ActionTile("Переименовать", Icons.Pencil, Modifier.weight(1f)) { rename = true }
             ActionTile("Копировать ссылку", Icons.Copy, Modifier.weight(1f)) {
                 copyToClipboard(context, p.link)
                 vm.message.value = "Ссылка на сервер скопирована"
@@ -739,22 +739,19 @@ private fun AppSwitch(checked: Boolean, enabled: Boolean = true, small: Boolean 
     )
 }
 
+/** Кнопка-иконка; подпись озвучивается TalkBack. */
 @Composable
 private fun ActionTile(label: String, icon: ImageVector, modifier: Modifier, enabled: Boolean = true, onClick: () -> Unit) {
-    Column(
+    Box(
         modifier
-            .fillMaxHeight()
-            .heightIn(min = 72.dp)
+            .height(52.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(C.Surface)
             .border(BorderStroke(1.dp, C.Border), RoundedCornerShape(14.dp))
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
+            .clickable(enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = if (enabled) C.AccentText else C.Muted, modifier = Modifier.size(20.dp))
-        Text(label, fontSize = 12.sp, color = if (enabled) C.Text else C.Muted, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Icon(icon, contentDescription = label, tint = if (enabled) C.AccentText else C.Muted, modifier = Modifier.size(22.dp))
     }
 }
 
