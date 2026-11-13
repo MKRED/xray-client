@@ -88,6 +88,12 @@ object Icons {
     val Qr = icon("qr", "M4 4h6v6h-6z", "M14 4h6v6h-6z", "M4 14h6v6h-6z", "M14 14h2v2h-2z", "M18 18h2v2h-2z", "M14 18h2")
     val More = icon("more", "M5 12h.01", "M12 12h.01", "M19 12h.01")
     val Chevron = icon("chevron", "M9 6l6 6l-6 6")
+    val Clock = icon("clock", "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0", "M12 7v5l3 3")
+    val Grid = icon("grid", "M4 4h6v6h-6z", "M14 4h6v6h-6z", "M4 14h6v6h-6z", "M14 14h6v6h-6z")
+    val Shield = icon("shield", "M12 3l8 3v6c0 5 -3.5 8 -8 9c-4.5 -1 -8 -4 -8 -9v-6z")
+    val External = icon("external", "M14 4h6v6", "M20 4l-9 9", "M18 14v4a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h4")
+    val Lines = icon("lines", "M4 6h16", "M4 12h16", "M4 18h10")
+    val Info = icon("info", "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0", "M12 11v5", "M12 8h.01")
 
     private fun icon(name: String, vararg paths: String): ImageVector =
         ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {

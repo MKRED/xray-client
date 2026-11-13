@@ -42,8 +42,22 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.Color
 import com.mkred.xrayclient.core.XrayCore
+
+
+/** Разделы настроек (вариант H1: список разделов, каждый — свой экран). */
+private enum class SettingsPage(val title: String) {
+    METRIC("Оценка серверов"),
+    SPEED("Тест и автопроверка скорости"),
+    PING("Проверка пинга"),
+    APPS("Приложения через VPN"),
+    RU("Российские сайты напрямую"),
+    LOGS("Логи"),
+    ABOUT("О приложении и обновления"),
+}
 
 @Composable
 fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
@@ -53,20 +67,107 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val checking by vm.checkingUpdate.collectAsStateWithLifecycle()
     val geoUpdating by vm.geoUpdating.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var page by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<SettingsPage?>(null) }
     var testUrl by remember(data.testUrl) { mutableStateOf(data.testUrl) }
     var showLog by remember { mutableStateOf(false) }
     var pickApps by remember { mutableStateOf(false) }
     val saveLog = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         uri?.let { vm.saveLog(it) }
     }
+    androidx.activity.compose.BackHandler(enabled = page != null) { page = null }
 
-    Column(
-        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text("Настройки", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 20.dp))
+    val quality = data.metric == Metric.QUALITY
+    val current = page
+    if (current == null) {
+        // ---------------- список разделов ----------------
+        Column(
+            modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Настройки", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 20.dp))
 
-        // ---- метрика ----
+            GroupLabel("ВЫБОР СЕРВЕРА")
+            SettingsGroup {
+                SettingsRow(
+                    Icons.Chart, IconTone.GREEN, "Оценка серверов",
+                    if (quality) "Качество · ${data.qSpeedMax} Мбит/с · ${data.qPingFull}–${data.qPingZero} мс" else "Задержка · только пинг",
+                ) { page = SettingsPage.METRIC }
+                RowDivider()
+                SettingsRow(
+                    Icons.Bolt, IconTone.GREEN, "Тест и автопроверка скорости",
+                    "Пакет ${data.speedTestMb} МБ · " + when {
+                        !quality -> "автопроверка — в режиме «Качество»"
+                        data.autoCheck -> "автопроверка вкл, порог ${data.slowMbps} Мбит/с"
+                        else -> "автопроверка выкл"
+                    },
+                ) { page = SettingsPage.SPEED }
+                RowDivider()
+                SettingsRow(
+                    Icons.Clock, IconTone.GREEN, "Проверка пинга",
+                    "Каждые ${data.checkIntervalSec} с · " + data.testUrl.substringAfter("://").substringBefore('/').removePrefix("www."),
+                ) { page = SettingsPage.PING }
+            }
+
+            GroupLabel("ПОДКЛЮЧЕНИЕ")
+            SettingsGroup {
+                SettingsRow(
+                    Icons.Grid, IconTone.BLUE, "Приложения через VPN",
+                    when (data.splitMode) {
+                        SplitMode.ALL -> "Все приложения"
+                        SplitMode.ONLY_SELECTED -> "Только выбранные · ${data.splitApps.size}"
+                        SplitMode.BYPASS_SELECTED -> "Кроме выбранных · ${data.splitApps.size}"
+                    },
+                ) { page = SettingsPage.APPS }
+                RowDivider()
+                SettingsRow(
+                    null, IconTone.BLUE, "Российские сайты напрямую",
+                    if (data.geoUpdatedAt == 0L) "Базы встроенные" else "Базы обновлены ${agoText(data.geoUpdatedAt)}",
+                    badgeText = "RU",
+                    trailing = {
+                        androidx.compose.material3.Switch(
+                            checked = data.bypassRu,
+                            onCheckedChange = { vm.setBypassRu(it) },
+                            colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Accent, checkedThumbColor = C.Bg),
+                        )
+                    },
+                ) { page = SettingsPage.RU }
+                RowDivider()
+                SettingsRow(
+                    Icons.Shield, IconTone.BLUE, "Постоянная VPN", "Системные настройки Android",
+                    trailing = { Icon(Icons.External, contentDescription = null, tint = Color(0xFF6B7280), modifier = Modifier.size(18.dp)) },
+                ) { context.startActivity(Intent(Settings.ACTION_VPN_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            }
+
+            GroupLabel("СИСТЕМА")
+            SettingsGroup {
+                SettingsRow(
+                    Icons.Lines, IconTone.GRAY, "Логи",
+                    when (data.logLevel) { "warning" -> "Ошибки"; "debug" -> "Подробный"; else -> "Обычный" } +
+                        " · " + formatBytes(remember(data.logLevel) { runCatching { com.mkred.xrayclient.log.AppLog.current.length() }.getOrDefault(0L) }),
+                ) { page = SettingsPage.LOGS }
+                RowDivider()
+                SettingsRow(
+                    Icons.Info, IconTone.GRAY, "О приложении и обновления",
+                    "${BuildConfig.VERSION_NAME} · " + (update?.let { "доступна ${it.tag}" } ?: "последняя версия"),
+                    badge = update != null,
+                ) { page = SettingsPage.ABOUT }
+            }
+            Box(Modifier.height(16.dp))
+        }
+    } else {
+        // ---------------- экран раздела ----------------
+        Column(
+            modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.IconButton(onClick = { page = null }) {
+                    Icon(Icons.Back, contentDescription = "Назад", tint = C.Text)
+                }
+                Text(current.title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            }
+            when (current) {
+                SettingsPage.METRIC -> {
         Panel {
             Text("Как оценивать серверы", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
             Text("Одна метрика для всего приложения: по ней показываются серверы и выбирается лучший", fontSize = 12.sp, color = C.Muted)
@@ -100,36 +201,47 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 )
             }
         }
-
-        // ---- шкалы качества ----
-        if (data.metric == Metric.QUALITY) Panel {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Шкалы качества", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+        if (data.metric == Metric.QUALITY) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, top = 4.dp)) {
+                Text("ШКАЛЫ КАЧЕСТВА", fontSize = 12.sp, color = C.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 val isDefault = data.qSpeedMax == 50 && data.qPingFull == 50 && data.qPingZero == 500
                 TextButton(onClick = { vm.resetQualityLimits() }, enabled = !isDefault) {
                     Text("Сбросить", color = if (isDefault) C.Muted else C.AccentText)
                 }
             }
-            LimitStepper(
-                "Скорость — полный балл от", C.Accent, data.qSpeedMax, "Мбит/с", "шаг 10 · от 10 до 500",
-                onMinus = { vm.setQualityLimits(speedMax = data.qSpeedMax - 10) },
-                onPlus = { vm.setQualityLimits(speedMax = data.qSpeedMax + 10) },
-                canMinus = data.qSpeedMax > 10, canPlus = data.qSpeedMax < 500,
-            )
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF1F232B)))
-            LimitStepper(
-                "Пинг — полный балл до", C.Blue, data.qPingFull, "мс", "шаг 10",
-                onMinus = { vm.setQualityLimits(pingFull = data.qPingFull - 10) },
-                onPlus = { vm.setQualityLimits(pingFull = data.qPingFull + 10) },
-                canMinus = data.qPingFull > 10, canPlus = data.qPingFull < 300,
-            )
-            LimitStepper(
-                "Пинг — ноль баллов от", C.Blue.copy(alpha = 0.4f), data.qPingZero, "мс", "шаг 50 · минимум на 50 мс выше полного балла",
-                onMinus = { vm.setQualityLimits(pingZero = data.qPingZero - 50) },
-                onPlus = { vm.setQualityLimits(pingZero = data.qPingZero + 50) },
-                canMinus = data.qPingZero > data.qPingFull + 50, canPlus = data.qPingZero < 3000,
-            )
-            // Живой пример, чтобы сразу видеть эффект
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.Surface)
+                    .border(1.dp, C.Border, RoundedCornerShape(18.dp)),
+            ) {
+                LimitRow(
+                    "Скорость", "полный балл от · 50 баллов", C.Accent, data.qSpeedMax, "Мбит/с",
+                    onMinus = { vm.setQualityLimits(speedMax = data.qSpeedMax - 10) },
+                    onPlus = { vm.setQualityLimits(speedMax = data.qSpeedMax + 10) },
+                    canMinus = data.qSpeedMax > 10, canPlus = data.qSpeedMax < 500,
+                )
+                RowDivider()
+                LimitRow(
+                    "Пинг: максимум", "полный балл до · 30 баллов", C.Blue, data.qPingFull, "мс",
+                    onMinus = { vm.setQualityLimits(pingFull = data.qPingFull - 10) },
+                    onPlus = { vm.setQualityLimits(pingFull = data.qPingFull + 10) },
+                    canMinus = data.qPingFull > 10, canPlus = data.qPingFull < 300,
+                )
+                RowDivider()
+                LimitRow(
+                    "Пинг: ноль", "ноль баллов от", C.Blue.copy(alpha = 0.4f), data.qPingZero, "мс",
+                    onMinus = { vm.setQualityLimits(pingZero = data.qPingZero - 50) },
+                    onPlus = { vm.setQualityLimits(pingZero = data.qPingZero + 50) },
+                    canMinus = data.qPingZero > data.qPingFull + 50, canPlus = data.qPingZero < 3000,
+                )
+                RowDivider()
+                Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.size(8.dp, 28.dp).clip(RoundedCornerShape(4.dp)).background(Purple))
+                    Column(Modifier.weight(1f)) {
+                        Text("Стабильность", fontSize = 14.sp)
+                        Text("доступность за 24 ч · 20 баллов", fontSize = 11.sp, color = C.Muted)
+                    }
+                }
+            }
             val ex = remember(data.qSpeedMax, data.qPingFull, data.qPingZero) {
                 val sp = ((25f / data.qSpeedMax).coerceIn(0f, 1f) * 50).toInt()
                 val pg = (((data.qPingZero - 120f) / (data.qPingZero - data.qPingFull)).coerceIn(0f, 1f) * 30).toInt()
@@ -140,10 +252,7 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.Surface2).padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Пример: 25 Мбит/с, 120 мс, 99%", fontSize = 12.sp, color = C.Muted)
-                    Text("${ex.first} + ${ex.second} + ${ex.third}", fontSize = 13.sp)
-                }
+                Text("Пример: 25 Мбит/с · 120 мс · 99% → ${ex.first} + ${ex.second} + ${ex.third}", fontSize = 12.sp, color = C.Muted, modifier = Modifier.weight(1f))
                 Text(
                     "$total", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = C.Bg,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp))
@@ -152,8 +261,8 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 )
             }
         }
-
-        // ---- тест скорости ----
+                }
+                SettingsPage.SPEED -> {
         Panel {
             Text("Тест скорости", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
             Text("Размер файла, который скачивается через сервер. Больше — точнее, но дороже по трафику", fontSize = 12.sp, color = C.Muted)
@@ -182,7 +291,6 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             )
         }
 
-        // ---- автопроверка скорости ----
         Panel {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -237,7 +345,8 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 }
             }
         }
-
+                }
+                SettingsPage.PING -> {
         Panel {
             Text("Проверка серверов во время работы", fontWeight = FontWeight.SemiBold)
             Text("Как часто проверять, не пора ли переключиться", fontSize = 12.sp, color = C.Muted)
@@ -268,7 +377,8 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 TextButton(onClick = { vm.setTestUrl(testUrl) }) { Text("Сохранить", color = C.AccentText) }
             }
         }
-
+                }
+                SettingsPage.APPS -> {
         Panel {
             Text("Приложения через VPN", fontWeight = FontWeight.SemiBold)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -312,7 +422,8 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             }
             Text("Изменения применяются сразу, без отключения VPN.", fontSize = 12.sp, color = C.Muted)
         }
-
+                }
+                SettingsPage.RU -> {
         Panel {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -341,18 +452,8 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 }
             }
         }
-
-        Panel {
-            Text("Постоянная VPN", fontWeight = FontWeight.SemiBold)
-            Text(
-                "Чтобы VPN включался сам и трафик не шёл мимо него, включите в системных настройках «Постоянная VPN» и «Блокировать соединения без VPN».",
-                fontSize = 12.sp, color = C.Muted,
-            )
-            OutlinedButton(onClick = {
-                context.startActivity(Intent(Settings.ACTION_VPN_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            }) { Text("Открыть настройки VPN", color = C.Text) }
-        }
-
+                }
+                SettingsPage.LOGS -> {
         Panel {
             Text("Логи", fontWeight = FontWeight.SemiBold)
             Text(
@@ -390,7 +491,8 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 OutlinedButton(onClick = { vm.clearLog() }, modifier = Modifier.weight(1f)) { Text("Очистить", color = C.Muted) }
             }
         }
-
+                }
+                SettingsPage.ABOUT -> {
         Panel {
             Text("О приложении", fontWeight = FontWeight.SemiBold)
             Text("Версия ${BuildConfig.VERSION_NAME}", fontSize = 13.sp, color = C.Muted)
@@ -419,11 +521,13 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 }
             }
         }
-        Box(Modifier.height(8.dp))
+                }
+            }
+            Box(Modifier.height(16.dp))
+        }
     }
 
     if (showLog) LogViewer(vm, onClose = { showLog = false })
-
 
     if (pickApps) {
         AppPickerDialog(
@@ -432,6 +536,103 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             onDone = { vm.setSplitApps(it); pickApps = false },
             onCancel = { pickApps = false },
         )
+    }
+}
+
+private enum class IconTone(val bg: Color, val fg: Color) {
+    GREEN(Color(0xFF1C2A22), Color(0xFF7EE2A8)),
+    BLUE(Color(0xFF1E2638), Color(0xFF6EA8FE)),
+    GRAY(Color(0xFF232833), Color(0xFFB9C3D4)),
+}
+
+@Composable
+private fun GroupLabel(text: String) {
+    Text(text, fontSize = 12.sp, color = C.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
+}
+
+@Composable
+private fun SettingsGroup(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.Surface)
+            .border(1.dp, C.Border, RoundedCornerShape(18.dp)),
+        content = content,
+    )
+}
+
+@Composable
+private fun RowDivider() {
+    Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF1F232B)))
+}
+
+@Composable
+private fun SettingsRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector?,
+    tone: IconTone,
+    title: String,
+    subtitle: String,
+    badgeText: String? = null,
+    badge: Boolean = false,
+    trailing: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).heightIn(min = 60.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(tone.bg), contentAlignment = Alignment.Center) {
+            if (icon != null) Icon(icon, contentDescription = null, tint = tone.fg, modifier = Modifier.size(18.dp))
+            else Text(badgeText ?: "", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = tone.fg)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, fontSize = 15.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Text(subtitle, fontSize = 12.sp, color = C.Muted, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
+        if (badge) Text(
+            "новое", fontSize = 11.sp, color = C.AccentText,
+            modifier = Modifier.clip(RoundedCornerShape(50)).background(C.AccentBg).padding(horizontal = 8.dp, vertical = 3.dp),
+        )
+        if (trailing != null) trailing()
+        else Icon(Icons.Chevron, contentDescription = null, tint = Color(0xFF6B7280), modifier = Modifier.size(18.dp))
+    }
+}
+
+/** Строка шкалы: метка слева, «−  значение  +» справа. */
+@Composable
+private fun LimitRow(
+    label: String,
+    sub: String,
+    color: Color,
+    value: Int,
+    unit: String,
+    onMinus: () -> Unit,
+    onPlus: () -> Unit,
+    canMinus: Boolean,
+    canPlus: Boolean,
+) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(start = 14.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.size(8.dp, 28.dp).clip(RoundedCornerShape(4.dp)).background(color))
+        Column(Modifier.weight(1f)) {
+            Text(label, fontSize = 14.sp)
+            Text(sub, fontSize = 11.sp, color = C.Muted)
+        }
+        OutlinedButton(
+            onClick = onMinus, enabled = canMinus, modifier = Modifier.size(40.dp),
+            shape = RoundedCornerShape(10.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+        ) { Text("−", fontSize = 18.sp, color = if (canMinus) C.Text else C.Muted) }
+        Row(Modifier.width(72.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
+            Text("$value", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(" $unit", fontSize = 11.sp, color = C.Muted)
+        }
+        OutlinedButton(
+            onClick = onPlus, enabled = canPlus, modifier = Modifier.size(40.dp),
+            shape = RoundedCornerShape(10.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+        ) { Text("+", fontSize = 18.sp, color = if (canPlus) C.Text else C.Muted) }
     }
 }
 
@@ -479,44 +680,5 @@ private fun StepRow(n: String, color: Color, text: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(n, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = color)
         Text(text, fontSize = 13.sp)
-    }
-}
-
-
-@Composable
-private fun LimitStepper(
-    label: String,
-    color: Color,
-    value: Int,
-    unit: String,
-    hint: String,
-    onMinus: () -> Unit,
-    onPlus: () -> Unit,
-    canMinus: Boolean,
-    canPlus: Boolean,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(color))
-            Text(label, fontSize = 14.sp)
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(
-                onClick = onMinus, enabled = canMinus, modifier = Modifier.size(44.dp),
-                shape = RoundedCornerShape(12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-            ) { Text("−", fontSize = 20.sp, color = if (canMinus) C.Text else C.Muted) }
-            Row(
-                Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(12.dp)).background(C.Surface2),
-                horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("$value", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                Text(" $unit", fontSize = 13.sp, color = C.Muted)
-            }
-            OutlinedButton(
-                onClick = onPlus, enabled = canPlus, modifier = Modifier.size(44.dp),
-                shape = RoundedCornerShape(12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-            ) { Text("+", fontSize = 20.sp, color = if (canPlus) C.Text else C.Muted) }
-        }
-        Text(hint, fontSize = 11.sp, color = Color(0xFF6B7280))
     }
 }
