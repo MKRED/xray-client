@@ -40,6 +40,7 @@ import com.mkred.xrayclient.data.Metric
 import com.mkred.xrayclient.data.SplitMode
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.graphics.Color
 import com.mkred.xrayclient.core.XrayCore
@@ -93,9 +94,61 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 WeightRow("Пинг", 0.6f, C.Blue, "30 балл.")
                 WeightRow("Стабильность", 0.4f, Purple, "20 балл.")
                 Text(
-                    "50 Мбит/с и выше — максимум скорости · пинг 50 мс и ниже — максимум, 500 мс и выше — ноль · стабильность — доступность за 24 ч. " +
+                    "${data.qSpeedMax} Мбит/с и выше — максимум скорости · пинг ${data.qPingFull} мс и ниже — максимум, ${data.qPingZero} мс и выше — ноль · стабильность — доступность за 24 ч. " +
                         "Без замера скорости за последние сутки оценка неполная (≈, максимум 50).",
                     fontSize = 11.sp, color = Color(0xFF6B7280),
+                )
+            }
+        }
+
+        // ---- шкалы качества ----
+        if (data.metric == Metric.QUALITY) Panel {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Шкалы качества", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                val isDefault = data.qSpeedMax == 50 && data.qPingFull == 50 && data.qPingZero == 500
+                TextButton(onClick = { vm.resetQualityLimits() }, enabled = !isDefault) {
+                    Text("Сбросить", color = if (isDefault) C.Muted else C.AccentText)
+                }
+            }
+            LimitStepper(
+                "Скорость — полный балл от", C.Accent, data.qSpeedMax, "Мбит/с", "шаг 10 · от 10 до 500",
+                onMinus = { vm.setQualityLimits(speedMax = data.qSpeedMax - 10) },
+                onPlus = { vm.setQualityLimits(speedMax = data.qSpeedMax + 10) },
+                canMinus = data.qSpeedMax > 10, canPlus = data.qSpeedMax < 500,
+            )
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF1F232B)))
+            LimitStepper(
+                "Пинг — полный балл до", C.Blue, data.qPingFull, "мс", "шаг 10",
+                onMinus = { vm.setQualityLimits(pingFull = data.qPingFull - 10) },
+                onPlus = { vm.setQualityLimits(pingFull = data.qPingFull + 10) },
+                canMinus = data.qPingFull > 10, canPlus = data.qPingFull < 300,
+            )
+            LimitStepper(
+                "Пинг — ноль баллов от", C.Blue.copy(alpha = 0.4f), data.qPingZero, "мс", "шаг 50 · минимум на 50 мс выше полного балла",
+                onMinus = { vm.setQualityLimits(pingZero = data.qPingZero - 50) },
+                onPlus = { vm.setQualityLimits(pingZero = data.qPingZero + 50) },
+                canMinus = data.qPingZero > data.qPingFull + 50, canPlus = data.qPingZero < 3000,
+            )
+            // Живой пример, чтобы сразу видеть эффект
+            val ex = remember(data.qSpeedMax, data.qPingFull, data.qPingZero) {
+                val sp = ((25f / data.qSpeedMax).coerceIn(0f, 1f) * 50).toInt()
+                val pg = (((data.qPingZero - 120f) / (data.qPingZero - data.qPingFull)).coerceIn(0f, 1f) * 30).toInt()
+                Triple(sp, pg, 19)
+            }
+            val total = ex.first + ex.second + ex.third
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.Surface2).padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Пример: 25 Мбит/с, 120 мс, 99%", fontSize = 12.sp, color = C.Muted)
+                    Text("${ex.first} + ${ex.second} + ${ex.third}", fontSize = 13.sp)
+                }
+                Text(
+                    "$total", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = C.Bg,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                        .background(if (total >= 80) C.Accent else if (total >= 50) C.Warn else C.Error)
+                        .padding(horizontal = 10.dp, vertical = 2.dp),
                 )
             }
         }
@@ -426,5 +479,44 @@ private fun StepRow(n: String, color: Color, text: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(n, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = color)
         Text(text, fontSize = 13.sp)
+    }
+}
+
+
+@Composable
+private fun LimitStepper(
+    label: String,
+    color: Color,
+    value: Int,
+    unit: String,
+    hint: String,
+    onMinus: () -> Unit,
+    onPlus: () -> Unit,
+    canMinus: Boolean,
+    canPlus: Boolean,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(color))
+            Text(label, fontSize = 14.sp)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = onMinus, enabled = canMinus, modifier = Modifier.size(44.dp),
+                shape = RoundedCornerShape(12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+            ) { Text("−", fontSize = 20.sp, color = if (canMinus) C.Text else C.Muted) }
+            Row(
+                Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(12.dp)).background(C.Surface2),
+                horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("$value", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text(" $unit", fontSize = 13.sp, color = C.Muted)
+            }
+            OutlinedButton(
+                onClick = onPlus, enabled = canPlus, modifier = Modifier.size(44.dp),
+                shape = RoundedCornerShape(12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+            ) { Text("+", fontSize = 20.sp, color = if (canPlus) C.Text else C.Muted) }
+        }
+        Text(hint, fontSize = 11.sp, color = Color(0xFF6B7280))
     }
 }

@@ -67,6 +67,17 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun setSpeedTestMb(mb: Int) = AppStore.update { it.copy(speedTestMb = mb) }
 
+    /** Шкалы качества; пинг «ноль» всегда хотя бы на 50 мс выше «полного балла». */
+    fun setQualityLimits(speedMax: Int? = null, pingFull: Int? = null, pingZero: Int? = null) = AppStore.update { d ->
+        val s = (speedMax ?: d.qSpeedMax).coerceIn(10, 500)
+        val f = (pingFull ?: d.qPingFull).coerceIn(10, 300)
+        var z = (pingZero ?: d.qPingZero).coerceIn(100, 3000)
+        if (z < f + 50) z = f + 50
+        d.copy(qSpeedMax = s, qPingFull = f, qPingZero = z)
+    }
+
+    fun resetQualityLimits() = AppStore.update { it.copy(qSpeedMax = 50, qPingFull = 50, qPingZero = 500) }
+
     fun setSpeedTestAllowed(subId: String, allowed: Boolean) {
         AppLog.i("Settings", "Тест скорости для подписки $subId: $allowed")
         AppStore.setSpeedTestAllowed(subId, allowed)

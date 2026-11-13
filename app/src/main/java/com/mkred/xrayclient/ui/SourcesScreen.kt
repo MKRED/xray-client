@@ -1001,7 +1001,7 @@ private fun QualityCard(q: com.mkred.xrayclient.core.QualityInfo) {
         }
         QualityPart(
             "Скорость", q.speedMbps?.let { formatMbps(it) } ?: "—", q.speedPts, 50, C.Accent,
-            if (q.complete) (q.speedMbps ?: 0f) / com.mkred.xrayclient.core.Quality.SPEED_MAX_MBPS else 0f,
+            if (q.complete) (q.speedMbps ?: 0f) / AppStore.data.value.qSpeedMax else 0f,
         )
         QualityPart("Пинг", delayText(q.delay), q.pingPts, 30, C.Blue, q.pingPts / 30f)
         QualityPart(

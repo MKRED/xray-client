@@ -160,6 +160,12 @@ data class AppData(
     val splitApps: Set<String> = emptySet(),
     /** Метрика: задержка или качество (скорость + пинг + стабильность). */
     val metric: Metric = Metric.LATENCY,
+    /** Шкалы качества: полный балл за скорость от, Мбит/с. */
+    val qSpeedMax: Int = 50,
+    /** Полный балл за пинг до, мс. */
+    val qPingFull: Int = 50,
+    /** Ноль баллов за пинг от, мс. */
+    val qPingZero: Int = 500,
     /** Автопроверка скорости текущего сервера. */
     val autoCheck: Boolean = false,
     /** Порог «медленно» для автопроверки, Мбит/с. */

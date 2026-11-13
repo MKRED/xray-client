@@ -185,6 +185,9 @@ object AppStore {
         put("metric", d.metric.name)
         put("speedTestMb", d.speedTestMb)
         put("autoCheck", d.autoCheck)
+        put("qSpeedMax", d.qSpeedMax)
+        put("qPingFull", d.qPingFull)
+        put("qPingZero", d.qPingZero)
         put("slowMbps", d.slowMbps)
         put("geoUpdatedAt", d.geoUpdatedAt)
         put("splitMode", d.splitMode.name)
@@ -237,6 +240,9 @@ object AppStore {
             metric = runCatching { Metric.valueOf(o.optString("metric")) }.getOrDefault(Metric.LATENCY),
             speedTestMb = o.optInt("speedTestMb", 5),
             autoCheck = o.optBoolean("autoCheck", false),
+            qSpeedMax = o.optInt("qSpeedMax", defaults.qSpeedMax),
+            qPingFull = o.optInt("qPingFull", defaults.qPingFull),
+            qPingZero = o.optInt("qPingZero", defaults.qPingZero),
             slowMbps = o.optInt("slowMbps", 5),
             geoUpdatedAt = o.optLong("geoUpdatedAt", 0),
             splitMode = runCatching { SplitMode.valueOf(o.optString("splitMode")) }.getOrDefault(defaults.splitMode),

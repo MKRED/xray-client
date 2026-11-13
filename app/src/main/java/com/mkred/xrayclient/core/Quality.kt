@@ -8,8 +8,9 @@ import com.mkred.xrayclient.data.Stats
 
 /**
  * Качество сервера 0–100:
- *  - скорость     50 баллов: 50 Мбит/с и выше — максимум (только замер младше 24 ч);
- *  - пинг         30 баллов: 50 мс и ниже — максимум, 500 мс и выше — ноль;
+ *  - скорость     50 баллов: от qSpeedMax Мбит/с — максимум (только замер младше 24 ч);
+ *  - пинг         30 баллов: до qPingFull мс — максимум, от qPingZero мс — ноль;
+ *  Пороги настраиваются (по умолчанию 50 Мбит/с, 50 мс, 500 мс).
  *  - стабильность 20 баллов: доступность за 24 ч.
  * Без свежего замера скорости оценка неполная (максимум 50) и помечается «≈».
  * Недоступный сейчас сервер — 0.
@@ -32,7 +33,6 @@ data class QualityInfo(
 }
 
 object Quality {
-    const val SPEED_MAX_MBPS = 50f
     const val SPEED_FRESH_MS = 24 * 3_600_000L
 
     fun of(
@@ -41,7 +41,11 @@ object Quality {
         speeds: Map<String, List<SpeedPoint>> = Stats.speeds.value,
         buckets: List<PingBucket> = Stats.buckets.value,
         now: Long = System.currentTimeMillis(),
+        d: com.mkred.xrayclient.data.AppData = AppStore.data.value,
     ): QualityInfo {
+        val speedMax = d.qSpeedMax.coerceAtLeast(1).toFloat()
+        val pingFull = d.qPingFull.toFloat()
+        val pingZero = d.qPingZero.toFloat().coerceAtLeast(pingFull + 1f)
         val delay = delays[p.id]
         val last = speeds[p.id]?.lastOrNull()
         val fresh = last?.takeIf { now - it.ts < SPEED_FRESH_MS && it.mbps > 0f }
@@ -52,10 +56,10 @@ object Quality {
         val uptime = if (total > 0) ok.toFloat() / total else null
 
         val pingPts = if (delay == null || delay <= 0) 0 else
-            (((500f - delay) / 450f).coerceIn(0f, 1f) * 30).toInt()
+            (((pingZero - delay) / (pingZero - pingFull)).coerceIn(0f, 1f) * 30).toInt()
         // Без истории: считаем стабильным, если сейчас отвечает
         val stabilityPts = ((uptime ?: if (delay != null && delay > 0) 1f else 0f) * 20).toInt()
-        val speedPts = fresh?.let { ((it.mbps / SPEED_MAX_MBPS).coerceIn(0f, 1f) * 50).toInt() } ?: 0
+        val speedPts = fresh?.let { ((it.mbps / speedMax).coerceIn(0f, 1f) * 50).toInt() } ?: 0
 
         val unavailable = delay != null && delay <= 0
         val score = if (unavailable) 0 else speedPts + pingPts + stabilityPts
