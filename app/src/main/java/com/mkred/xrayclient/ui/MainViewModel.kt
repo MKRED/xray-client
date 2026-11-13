@@ -35,13 +35,6 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     val updateProgress = MutableStateFlow<Updater.Progress?>(null)
     val checkingUpdate = MutableStateFlow(false)
 
-    init {
-        checkUpdate(silent = true)
-        // Подписки старше 6 часов обновляем при запуске
-        val stale = data.value.subscriptions.any { System.currentTimeMillis() - it.updatedAt > 6 * 3600_000L }
-        if (stale) refreshSubscriptions(silent = true)
-        if (data.value.bypassRu && com.mkred.xrayclient.core.GeoRules.isStale()) updateGeo(silent = true)
-    }
 
     fun setMode(mode: SelectionMode) {
         AppLog.i("Settings", "Режим выбора: $mode")
@@ -316,5 +309,14 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         Updater.downloadAndInstall(app, r) { updateProgress.value = it }
             .onFailure { message.value = it.message }
         updateProgress.value = null
+    }
+
+    // Должен идти последним: к этому моменту созданы все поля класса
+    init {
+        checkUpdate(silent = true)
+        // Подписки старше 6 часов обновляем при запуске
+        val stale = data.value.subscriptions.any { System.currentTimeMillis() - it.updatedAt > 6 * 3600_000L }
+        if (stale) refreshSubscriptions(silent = true)
+        if (data.value.bypassRu && com.mkred.xrayclient.core.GeoRules.isStale()) updateGeo(silent = true)
     }
 }

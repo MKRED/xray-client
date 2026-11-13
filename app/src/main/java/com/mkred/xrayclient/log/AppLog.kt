@@ -33,6 +33,18 @@ object AppLog {
     private var written = 0L
 
     val current: File get() = File(dir, "app.log")
+
+    /** Последнее падение — показывается на экране ошибки при следующем запуске. */
+    val lastCrash: File get() = File(dir, "last_crash.txt")
+
+    /** Записать ошибку для экрана ошибки (и в лог). */
+    fun recordCrash(where: String, ex: Throwable) {
+        val sw = StringWriter().also { ex.printStackTrace(PrintWriter(it)) }
+        val text = "Xray Client ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · Android ${Build.VERSION.RELEASE} " +
+            "(API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}\n${stamp()} · $where\n\n$sw"
+        runCatching { lastCrash.writeText(text) }
+        appendRaw("!!!!! ПАДЕНИЕ ${stamp()} · $where\n$sw")
+    }
     private val previous: File get() = File(dir, "app.old.log")
 
     fun init(context: Context) {
@@ -82,8 +94,7 @@ object AppLog {
         val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { th, ex ->
             // Пишем напрямую: сборщик может не успеть до завершения процесса
-            val sw = StringWriter().also { ex.printStackTrace(PrintWriter(it)) }
-            appendRaw("!!!!! ПАДЕНИЕ ${stamp()} в потоке ${th.name}\n$sw")
+            recordCrash("поток ${th.name}", ex)
             previousHandler?.uncaughtException(th, ex)
         }
     }
