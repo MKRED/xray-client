@@ -37,7 +37,7 @@ object XrayConfig {
                 put("listen", "127.0.0.1")
                 put("port", localPort)
                 put("protocol", "http")
-                put("settings", JSONObject().put("userLevel", 8))
+                put("settings", Net.inboundSettings().put("userLevel", 8))
             })
         })
         put("outbounds", JSONArray().apply {
@@ -103,6 +103,7 @@ object XrayConfig {
             put("listen", "127.0.0.1")
             put("port", port)
             put("protocol", "http")
+            put("settings", Net.inboundSettings())
         }))
         put("outbounds", JSONArray().put(outbound(p)))
     }.toString()

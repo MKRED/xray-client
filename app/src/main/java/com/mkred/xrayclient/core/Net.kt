@@ -5,8 +5,11 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.Proxy
+import java.net.Authenticator
+import java.net.PasswordAuthentication
 import java.net.ServerSocket
 import java.net.URL
+import java.security.SecureRandom
 
 /**
  * Сетевые запросы самого приложения (обновления, подписки).
@@ -23,6 +26,42 @@ object Net {
     var proxyPort: Int? = null
 
     fun freePort(): Int = ServerSocket(0).use { it.localPort }
+
+    /**
+     * Логин и пароль локальных прокси (рабочее ядро и тест скорости).
+     * Без них порт на 127.0.0.1 мог бы использовать любой процесс на телефоне — в том числе
+     * приложения, которые идут мимо VPN или ищут открытые прокси, чтобы обнаружить VPN.
+     * Генерируются заново при каждом запуске процесса и нигде не сохраняются.
+     */
+    val proxyUser: String = randomToken(12)
+    val proxyPass: String = randomToken(24)
+
+    private fun randomToken(len: Int): String {
+        val abc = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        val rnd = SecureRandom()
+        return String(CharArray(len) { abc[rnd.nextInt(abc.length)] })
+    }
+
+    /** Отдаёт логин и пароль только на запрос авторизации от локального прокси. */
+    fun installProxyAuth() {
+        Authenticator.setDefault(object : Authenticator() {
+            override fun getPasswordAuthentication(): PasswordAuthentication? {
+                val local = requestingHost == "127.0.0.1" || requestingSite?.isLoopbackAddress == true
+                if (requestorType != RequestorType.PROXY || !local) return null
+                return PasswordAuthentication(proxyUser, proxyPass.toCharArray())
+            }
+        })
+    }
+
+    /** Блок settings для HTTP-входа Xray с авторизацией. */
+    fun inboundSettings(): org.json.JSONObject = org.json.JSONObject().apply {
+        put("accounts", org.json.JSONArray().put(org.json.JSONObject().put("user", proxyUser).put("pass", proxyPass)))
+        put("allowTransparent", false)
+    }
+
+    /** Ошибка авторизации на локальном прокси — это сбой приложения, а не медленный сервер. */
+    fun isProxyAuthError(e: Throwable?): Boolean =
+        generateSequence(e) { it.cause }.any { it.message?.contains("407") == true }
 
     class HttpError(val code: Int) : IOException("HTTP $code")
 

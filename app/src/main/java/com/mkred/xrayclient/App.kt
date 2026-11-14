@@ -35,7 +35,7 @@ class App : Application() {
                 throw it
             }
         }
-        step("сеть") { NetworkState.init(this) }
+        step("сеть") { NetworkState.init(this); com.mkred.xrayclient.core.Net.installProxyAuth() }
         step("ядро Xray") { XrayCore.init(this) }
 
         // Плитка в шторке обновляется при любом изменении состояния VPN

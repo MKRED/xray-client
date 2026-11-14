@@ -140,7 +140,13 @@ object AutoCheck {
         probeNow = false
         nextProbeAt = now + interval()
         val port = Net.proxyPort ?: return
-        val probe = runCatching { SpeedTest.download(port, PROBE_BYTES, { _, _ -> }, timeoutMs = 8_000) }.getOrDefault(0f)
+        val probeRes = runCatching { SpeedTest.download(port, PROBE_BYTES, { _, _ -> }, timeoutMs = 8_000) }
+        if (Net.isProxyAuthError(probeRes.exceptionOrNull())) {
+            // Не вина сервера: локальный прокси не принял пароль. Не портим оценку и не переключаемся.
+            AppLog.e(TAG, "Локальный прокси отклонил авторизацию — проверка пропущена", probeRes.exceptionOrNull())
+            return
+        }
+        val probe = probeRes.getOrDefault(0f)
         AppLog.d(TAG, "Лёгкая проверка «${cur.name}»: ${fmt(probe)}")
 
         val wasFreeze = suspectFreeze
