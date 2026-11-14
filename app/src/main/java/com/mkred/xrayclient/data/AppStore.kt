@@ -184,6 +184,11 @@ object AppStore {
         put("bypassRu", d.bypassRu)
         put("metric", d.metric.name)
         put("speedTestMb", d.speedTestMb)
+        put("sweep", d.sweep)
+        put("sweepHours", d.sweepHours)
+        put("sweepMobile", d.sweepMobile)
+        put("sweepLastAt", d.sweepLastAt)
+        put("sweepLastCount", d.sweepLastCount)
         put("autoCheck", d.autoCheck)
         put("qSpeedMax", d.qSpeedMax)
         put("qPingFull", d.qPingFull)
@@ -239,6 +244,11 @@ object AppStore {
             bypassRu = o.optBoolean("bypassRu", false),
             metric = runCatching { Metric.valueOf(o.optString("metric")) }.getOrDefault(Metric.LATENCY),
             speedTestMb = o.optInt("speedTestMb", 5),
+            sweep = o.optBoolean("sweep", false),
+            sweepHours = o.optInt("sweepHours", 6),
+            sweepMobile = o.optBoolean("sweepMobile", false),
+            sweepLastAt = o.optLong("sweepLastAt", 0),
+            sweepLastCount = o.optInt("sweepLastCount", 0),
             autoCheck = o.optBoolean("autoCheck", false),
             qSpeedMax = o.optInt("qSpeedMax", defaults.qSpeedMax),
             qPingFull = o.optInt("qPingFull", defaults.qPingFull),

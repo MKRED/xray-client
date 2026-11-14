@@ -52,29 +52,45 @@ object SpeedTest {
     val run: StateFlow<SpeedRun?> = _run.asStateFlow()
 
     /** Запустить прогон по списку серверов (остальные прогоны отменяются). */
-    fun start(title: String, list: List<Profile>) {
+    fun start(
+        title: String,
+        list: List<Profile>,
+        skipUnreachable: Boolean = false,
+        onFinish: ((finished: Boolean, measured: Int) -> Unit)? = null,
+    ) {
         val allowed = list.filter { AppStore.speedTestAllowed(it) }
-        if (allowed.isEmpty()) return
+        if (allowed.isEmpty()) { onFinish?.invoke(true, 0); return }
         job?.cancel()
         val sizeMb = AppStore.data.value.speedTestMb
         val size = sizeMb * 1_000_000L
         _run.value = SpeedRun(title, allowed.map { it.id }, 0, null, 0, 0f, 0, size * allowed.size)
         job = scope.launch {
             AppLog.i(TAG, "Прогон «$title»: ${allowed.size} серверов по $sizeMb МБ")
+            var finished = false
+            var measured = 0
             try {
                 allowed.forEachIndexed { i, p ->
                     ensureActive()
                     _run.value = _run.value?.copy(index = i, currentId = p.id, currentBytes = 0, liveMbps = 0f)
                     // Свежий пинг — для качества
-                    AppStore.setDelay(p.id, XrayCore.measure(p, AppStore.data.value.testUrl))
+                    val delay = XrayCore.measure(p, AppStore.data.value.testUrl)
+                    AppStore.setDelay(p.id, delay)
+                    if (skipUnreachable && delay <= 0) {
+                        // Недоступен — оценка и так 0, не тратим 15 с на тайм-аут
+                        _run.value = _run.value?.let { it.copy(plannedBytes = it.plannedBytes - size) }
+                        return@forEachIndexed
+                    }
                     val mbps = measure(p, size) { bytes, live ->
                         _run.value = _run.value?.copy(currentBytes = bytes, liveMbps = live)
                     }
                     Stats.recordSpeed(p.id, mbps, sizeMb)
+                    measured++
                     _run.value = _run.value?.let { it.copy(totalBytes = it.totalBytes + it.currentBytes) }
                 }
+                finished = true
             } finally {
                 _run.value = null
+                onFinish?.invoke(finished, measured)
                 AppLog.i(TAG, "Прогон «$title» завершён")
             }
         }

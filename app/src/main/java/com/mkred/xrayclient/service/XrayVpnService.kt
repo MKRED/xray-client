@@ -122,6 +122,7 @@ class XrayVpnService : VpnService() {
 
     override fun onDestroy() {
         AutoCheck.stop()
+        com.mkred.xrayclient.core.SpeedSweep.stop()
         unwatchScreen()
         unwatchNetwork()
         stopCore()
@@ -306,6 +307,7 @@ class XrayVpnService : VpnService() {
                 val (down, up) = queryTraffic()
                 Stats.addTraffic(down, up, current?.id, current?.name)
                 AutoCheck.onSecond(down, up)
+                com.mkred.xrayclient.core.SpeedSweep.onSecond(down)
                 if (System.currentTimeMillis() - lastSave > 60_000) {
                     Stats.save()
                     lastSave = System.currentTimeMillis()
@@ -415,6 +417,7 @@ class XrayVpnService : VpnService() {
         watchNetwork()
         watchScreen()
         AutoCheck.start(scope, autoHost)
+        com.mkred.xrayclient.core.SpeedSweep.start(scope)
         monitor?.cancel()
         monitor = scope.launch {
             while (isActive) {
@@ -441,6 +444,7 @@ class XrayVpnService : VpnService() {
         notifier?.cancel()
         traffic?.cancel()
         AutoCheck.stop()
+        com.mkred.xrayclient.core.SpeedSweep.stop()
         unwatchScreen()
         unwatchNetwork()
         stopCore()

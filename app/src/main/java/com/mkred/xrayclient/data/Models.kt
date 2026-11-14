@@ -172,6 +172,15 @@ data class AppData(
     val slowMbps: Int = 5,
     /** Размер пакета для теста скорости, МБ: 1, 5, 10 или 25. */
     val speedTestMb: Int = 5,
+    /** Плановая проверка скорости всех серверов по таймеру. */
+    val sweep: Boolean = false,
+    /** Интервал плановой проверки, ч: 3, 6, 9 или 12. */
+    val sweepHours: Int = 6,
+    /** Разрешить плановую проверку на мобильной сети. */
+    val sweepMobile: Boolean = false,
+    /** Когда последний плановый обход завершился и сколько серверов измерил. */
+    val sweepLastAt: Long = 0,
+    val sweepLastCount: Int = 0,
     /** Российские сайты — напрямую, мимо VPN. */
     val bypassRu: Boolean = false,
     /** Когда базы ru-geoip/ru-geosite обновлялись из сети (0 — встроенные в APK). */

@@ -91,6 +91,14 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun setSlowMbps(v: Int) = AppStore.update { it.copy(slowMbps = v) }
 
+    fun setSweep(on: Boolean) {
+        AppLog.i("Settings", "Плановая проверка серверов: $on")
+        AppStore.update { it.copy(sweep = on) }
+    }
+    fun setSweepHours(h: Int) = AppStore.update { it.copy(sweepHours = h) }
+    fun setSweepMobile(on: Boolean) = AppStore.update { it.copy(sweepMobile = on) }
+    fun sweepNow(): Boolean = com.mkred.xrayclient.core.SpeedSweep.runNow()
+
     // ---- российские сайты напрямую ----
 
     val geoUpdating = MutableStateFlow(false)

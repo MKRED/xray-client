@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mkred.xrayclient.BuildConfig
+import com.mkred.xrayclient.data.AppStore
 import com.mkred.xrayclient.data.Metric
 import com.mkred.xrayclient.data.SplitMode
 import androidx.compose.foundation.border
@@ -97,9 +98,9 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     Icons.Bolt, IconTone.GREEN, "Тест и автопроверка скорости",
                     "Пакет ${data.speedTestMb} МБ · " + when {
                         !quality -> "автопроверка — в режиме «Качество»"
-                        data.autoCheck -> "автопроверка вкл, порог ${data.slowMbps} Мбит/с"
+                        data.autoCheck -> "автопроверка вкл"
                         else -> "автопроверка выкл"
-                    },
+                    } + if (quality && data.sweep) " · обход раз в ${data.sweepHours} ч" else "",
                 ) { page = SettingsPage.SPEED }
                 RowDivider()
                 SettingsRow(
@@ -345,6 +346,74 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 }
             }
         }
+
+        // ---- плановая проверка всех серверов (вариант I2) ----
+        val speedRun by vm.speedRun.collectAsStateWithLifecycle()
+        val profiles by AppStore.usable.collectAsStateWithLifecycle()
+        val sweepCount = remember(profiles, data.subscriptions) { com.mkred.xrayclient.core.SpeedSweep.eligible().size }
+        GroupLabel("ПЛАНОВАЯ ПРОВЕРКА ВСЕХ СЕРВЕРОВ")
+        SettingsGroup {
+            SwitchRow(
+                "Обновлять замеры по таймеру",
+                if (quality) "Чтобы оценка всех серверов была полной" else "Работает только в режиме «Качество»",
+                data.sweep, enabled = quality,
+            ) { vm.setSweep(it) }
+            RowDivider()
+            Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Как часто", fontSize = 15.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(3, 6, 9, 12).forEach { h ->
+                        val sel = data.sweepHours == h
+                        Box(
+                            Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(10.dp))
+                                .background(if (sel) C.AccentBg else C.Chip)
+                                .then(if (sel) Modifier.border(2.dp, C.Accent, RoundedCornerShape(10.dp)) else Modifier)
+                                .clickable(role = Role.RadioButton) { vm.setSweepHours(h) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("$h ч", fontSize = 14.sp, color = if (sel) C.AccentText else C.Text, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal)
+                        }
+                    }
+                }
+            }
+            RowDivider()
+            SwitchRow("На мобильной сети", "Выкл — только по Wi‑Fi", data.sweepMobile) { vm.setSweepMobile(it) }
+        }
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.Surface2).padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            InfoLine("Последний обход", if (data.sweepLastAt == 0L) "ещё не было" else "${agoText(data.sweepLastAt)} · ${data.sweepLastCount} серв.")
+            val next = com.mkred.xrayclient.core.SpeedSweep.nextAt()
+            InfoLine(
+                "Следующий",
+                when {
+                    !data.sweep || !quality -> "выключено"
+                    next <= System.currentTimeMillis() -> "при простое"
+                    else -> "через ~${((next - System.currentTimeMillis()) / 3_600_000L).coerceAtLeast(1)} ч"
+                },
+            )
+            val perRun = sweepCount * data.speedTestMb
+            InfoLine("Трафик", "≈ $perRun МБ за обход · ≈ ${perRun * 24 / data.sweepHours} МБ/сут")
+            OutlinedButton(
+                onClick = {
+                    if (!vm.sweepNow()) android.widget.Toast.makeText(context, "Уже идёт тест скорости", android.widget.Toast.LENGTH_SHORT).show()
+                },
+                enabled = speedRun == null && sweepCount > 0,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                shape = RoundedCornerShape(10.dp),
+            ) {
+                Text(
+                    speedRun?.let { "Идёт проверка: ${it.index + 1} из ${it.ids.size}" } ?: "Проверить сейчас",
+                    color = if (speedRun == null) C.Text else C.Muted,
+                )
+            }
+        }
+        Text(
+            "Работает при включённом VPN. Проверяются все серверы, кроме исключённых, отключённых подписок и источников с запретом теста; недоступные пропускаются. " +
+                "Серверы по одному, пакетом выше. Если начинается загрузка — обход уступает и продолжится позже.",
+            fontSize = 12.sp, color = Color(0xFF6B7280),
+        )
                 }
                 SettingsPage.PING -> {
         Panel {
@@ -680,5 +749,33 @@ private fun StepRow(n: String, color: Color, text: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(n, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = color)
         Text(text, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun SwitchRow(title: String, subtitle: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, fontSize = 15.sp, color = if (enabled) C.Text else C.Muted)
+            Text(subtitle, fontSize = 12.sp, color = if (enabled) C.Muted else C.Warn)
+        }
+        androidx.compose.material3.Switch(
+            checked = checked && enabled,
+            enabled = enabled,
+            onCheckedChange = onChange,
+            colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Accent, checkedThumbColor = C.Bg),
+        )
+    }
+}
+
+@Composable
+private fun InfoLine(label: String, value: String) {
+    Row(Modifier.fillMaxWidth()) {
+        Text(label, fontSize = 13.sp, color = C.Muted, modifier = Modifier.weight(1f))
+        Text(value, fontSize = 13.sp)
     }
 }
