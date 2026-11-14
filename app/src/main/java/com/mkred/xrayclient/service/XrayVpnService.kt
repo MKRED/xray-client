@@ -48,6 +48,11 @@ class XrayVpnService : VpnService() {
 
     companion object {
         private const val TAG = "XrayVpn"
+        /** Полная проверка всех серверов: при включённом экране не чаще, чем раз в 3 мин. */
+        private const val FULL_CHECK_SEC = 180
+        /** При выключенном экране: текущий — раз в минуту, все — раз в 5 мин. */
+        private const val SCREEN_OFF_CHECK_SEC = 60
+        private const val FULL_CHECK_SCREEN_OFF_SEC = 300
         private const val ACTION_START = "start"
         private const val ACTION_STOP = "stop"
         private const val ACTION_RESELECT = "reselect"
@@ -420,14 +425,31 @@ class XrayVpnService : VpnService() {
         com.mkred.xrayclient.core.SpeedSweep.start(scope)
         monitor?.cancel()
         monitor = scope.launch {
+            // Пинг всех серверов — это отдельное ядро и TLS-рукопожатие на каждый, поэтому часто
+            // проверяем только текущий, а все — реже. Упавший текущий — сразу полная проверка.
+            var lastFull = System.currentTimeMillis()
             while (isActive) {
-                delay(AppStore.data.value.checkIntervalSec.coerceAtLeast(10) * 1000L)
-                if (AppStore.data.value.mode == SelectionMode.MANUAL) {
-                    // Переключаться не нужно, но пинг текущего сервера пишем в статистику
-                    current?.let { p -> AppStore.setDelay(p.id, XrayCore.measure(p, AppStore.data.value.testUrl)) }
-                    continue
-                }
-                runCatching { reselect() }.onFailure { AppLog.w(TAG, "Ошибка фоновой проверки", it) }
+                val screenOn = AutoCheck.screenOn
+                val interval = AppStore.data.value.checkIntervalSec.coerceAtLeast(10)
+                delay((if (screenOn) interval else SCREEN_OFF_CHECK_SEC) * 1000L)
+                val d = AppStore.data.value
+                val now = System.currentTimeMillis()
+                val fullEvery = (if (AutoCheck.screenOn) maxOf(FULL_CHECK_SEC, interval) else FULL_CHECK_SCREEN_OFF_SEC) * 1000L
+                runCatching {
+                    if (d.mode != SelectionMode.MANUAL && now - lastFull >= fullEvery) {
+                        lastFull = now
+                        reselect()
+                        return@runCatching
+                    }
+                    val p = current ?: return@runCatching
+                    val delayMs = XrayCore.measure(p, d.testUrl)
+                    AppStore.setDelay(p.id, delayMs)
+                    if (delayMs <= 0 && d.mode != SelectionMode.MANUAL) {
+                        AppLog.i(TAG, "«${p.name}» не ответил — проверяю все серверы")
+                        lastFull = now
+                        reselect()
+                    }
+                }.onFailure { AppLog.w(TAG, "Ошибка фоновой проверки", it) }
             }
         }
     }

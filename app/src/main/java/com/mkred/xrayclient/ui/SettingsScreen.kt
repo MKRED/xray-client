@@ -105,7 +105,7 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 RowDivider()
                 SettingsRow(
                     Icons.Clock, IconTone.GREEN, "Проверка пинга",
-                    "Каждые ${data.checkIntervalSec} с · " + data.testUrl.substringAfter("://").substringBefore('/').removePrefix("www."),
+                    "Текущий раз в ${data.checkIntervalSec} с · все раз в ${maxOf(3, data.checkIntervalSec / 60)} мин · " + data.testUrl.substringAfter("://").substringBefore('/').removePrefix("www."),
                 ) { page = SettingsPage.PING }
             }
 
@@ -418,7 +418,7 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 SettingsPage.PING -> {
         Panel {
             Text("Проверка серверов во время работы", fontWeight = FontWeight.SemiBold)
-            Text("Как часто проверять, не пора ли переключиться", fontSize = 12.sp, color = C.Muted)
+            Text("Как часто пинговать текущий сервер. Если он не ответил — сразу проверяются все", fontSize = 12.sp, color = C.Muted)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(15, 30, 60, 120).forEach { sec ->
                     val sel = data.checkIntervalSec == sec
@@ -445,6 +445,11 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             if (testUrl != data.testUrl) {
                 TextButton(onClick = { vm.setTestUrl(testUrl) }) { Text("Сохранить", color = C.AccentText) }
             }
+            Text(
+                "Все серверы пингуются реже: раз в ${maxOf(3, data.checkIntervalSec / 60)} мин, при выключенном экране — раз в 5 мин " +
+                    "(текущий — раз в минуту). Каждая проверка — отдельное соединение, так экономится батарея.",
+                fontSize = 12.sp, color = C.Muted,
+            )
         }
                 }
                 SettingsPage.APPS -> {

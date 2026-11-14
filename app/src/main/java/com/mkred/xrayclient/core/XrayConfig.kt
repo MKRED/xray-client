@@ -17,7 +17,9 @@ object XrayConfig {
      */
     fun forVpn(p: Profile, logLevel: String = "info", localPort: Int? = null, bypassRu: Boolean = false): String = JSONObject().apply {
         put("log", JSONObject().apply {
-            put("loglevel", logLevel)
+            // «Обычный» уровень приложения: от ядра только предупреждения и ошибки.
+            // На info ядро пишет строку на каждое соединение (с адресом сайта) — лишние записи и расход батареи.
+            put("loglevel", if (logLevel == "debug") "debug" else "warning")
             // Журнал посещённых адресов — только в подробном режиме
             if (logLevel != "debug") put("access", "none")
             put("dnsLog", logLevel == "debug")
