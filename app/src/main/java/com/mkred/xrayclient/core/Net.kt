@@ -1,15 +1,19 @@
 package com.mkred.xrayclient.core
 
 import com.mkred.xrayclient.log.AppLog
+import okhttp3.Authenticator
+import okhttp3.Credentials
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
 import java.io.IOException
-import java.net.HttpURLConnection
+import java.io.InputStream
 import java.net.InetSocketAddress
 import java.net.Proxy
-import java.net.Authenticator
-import java.net.PasswordAuthentication
 import java.net.ServerSocket
 import java.net.URL
 import java.security.SecureRandom
+import java.util.concurrent.TimeUnit
 
 /**
  * Сетевые запросы самого приложения (обновления, подписки).
@@ -42,16 +46,41 @@ object Net {
         return String(CharArray(len) { abc[rnd.nextInt(abc.length)] })
     }
 
-    /** Отдаёт логин и пароль только на запрос авторизации от локального прокси. */
-    fun installProxyAuth() {
-        Authenticator.setDefault(object : Authenticator() {
-            override fun getPasswordAuthentication(): PasswordAuthentication? {
-                val local = requestingHost == "127.0.0.1" || requestingSite?.isLoopbackAddress == true
-                if (requestorType != RequestorType.PROXY || !local) return null
-                return PasswordAuthentication(proxyUser, proxyPass.toCharArray())
-            }
-        })
+    /** Оставлено для совместимости: авторизация теперь передаётся сразу в каждом запросе. */
+    fun installProxyAuth() = Unit
+
+    private val proxyCredential: String by lazy { Credentials.basic(proxyUser, proxyPass) }
+
+    /**
+     * Логин и пароль прокси отправляются сразу, в первом же запросе (CONNECT для https).
+     * Встроенный в Android HttpURLConnection так не умеет: он ждёт ответа 407 и повторяет
+     * запрос в том же соединении, а Xray после 407 соединение закрывает.
+     */
+    private val preemptiveAuth = Authenticator { _, response ->
+        if (response.request.header("Proxy-Authorization") != null) null
+        else response.request.newBuilder().header("Proxy-Authorization", proxyCredential).build()
     }
+
+    private val base: OkHttpClient by lazy { OkHttpClient.Builder().followRedirects(true).followSslRedirects(true).build() }
+
+    /** Клиент через локальный прокси ядра на [port] (или напрямую, если null). */
+    fun client(port: Int?, connectTimeoutMs: Long, readTimeoutMs: Long): OkHttpClient = base.newBuilder().apply {
+        connectTimeout(connectTimeoutMs, TimeUnit.MILLISECONDS)
+        readTimeout(readTimeoutMs, TimeUnit.MILLISECONDS)
+        if (port != null) {
+            proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", port)))
+            proxyAuthenticator(preemptiveAuth)
+        } else {
+            proxy(Proxy.NO_PROXY)
+        }
+    }.build()
+
+    /** Запрос; для http через прокси заголовок авторизации идёт прямо в запросе. */
+    fun get(url: String, viaProxy: Boolean, headers: Map<String, String> = emptyMap()): Request =
+        Request.Builder().url(url).apply {
+            headers.forEach { (k, v) -> header(k, v) }
+            if (viaProxy && url.startsWith("http://")) header("Proxy-Authorization", proxyCredential)
+        }.build()
 
     /** Блок settings для HTTP-входа Xray с авторизацией. */
     fun inboundSettings(): org.json.JSONObject = org.json.JSONObject().apply {
@@ -61,7 +90,18 @@ object Net {
 
     /** Ошибка авторизации на локальном прокси — это сбой приложения, а не медленный сервер. */
     fun isProxyAuthError(e: Throwable?): Boolean =
-        generateSequence(e) { it.cause }.any { it.message?.contains("407") == true }
+        generateSequence(e) { it.cause }.any { t ->
+            val m = t.message.orEmpty()
+            m.contains("407") || m.contains("authenticate with proxy", ignoreCase = true)
+        }
+
+    /** Ответ сервера для [request] — те же поля, что раньше брались у HttpURLConnection. */
+    class Resp(private val r: Response) {
+        val inputStream: InputStream get() = r.body!!.byteStream()
+        val contentLengthLong: Long get() = r.body?.contentLength() ?: -1L
+        val url: URL get() = r.request.url.toUrl()
+        fun getHeaderField(name: String): String? = r.header(name)
+    }
 
     class HttpError(val code: Int) : IOException("HTTP $code")
 
@@ -74,29 +114,24 @@ object Net {
         headers: Map<String, String> = emptyMap(),
         connectTimeout: Int = 15_000,
         readTimeout: Int = 20_000,
-        block: (HttpURLConnection) -> T,
+        block: (Resp) -> T,
     ): T {
         val routes = buildList {
-            proxyPort?.let { add("через VPN" to Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", it))) }
-            add("напрямую" to Proxy.NO_PROXY)
+            proxyPort?.let { add("через VPN" to it) }
+            add("напрямую" to null)
         }
         var last: Exception? = null
-        for ((name, proxy) in routes) {
-            val conn = URL(url).openConnection(proxy) as HttpURLConnection
+        for ((name, port) in routes) {
             try {
-                conn.connectTimeout = connectTimeout
-                conn.readTimeout = readTimeout
-                conn.instanceFollowRedirects = true
-                headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
-                val code = conn.responseCode
-                if (code !in 200..299) throw HttpError(code)
-                AppLog.d(TAG, "GET ${conn.url.host} $name: HTTP $code")
-                return block(conn)
+                val call = client(port, connectTimeout.toLong(), readTimeout.toLong()).newCall(get(url, port != null, headers))
+                call.execute().use { resp ->
+                    if (!resp.isSuccessful) throw HttpError(resp.code)
+                    AppLog.d(TAG, "GET ${resp.request.url.host} $name: HTTP ${resp.code}")
+                    return block(Resp(resp))
+                }
             } catch (e: Exception) {
-                AppLog.w(TAG, "GET ${URL(url).host} $name: ${e.message}")
+                AppLog.w(TAG, "GET ${runCatching { URL(url).host }.getOrDefault("?")} $name: ${e.message}")
                 last = e
-            } finally {
-                conn.disconnect()
             }
         }
         throw last ?: IOException("нет сети")

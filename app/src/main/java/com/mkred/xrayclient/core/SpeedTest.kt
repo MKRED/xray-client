@@ -139,12 +139,12 @@ object SpeedTest {
         onProgress: (Long, Float) -> Unit,
         timeoutMs: Long = TIMEOUT_MS,
     ): Float {
-        val conn = URL(url(size)).openConnection(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", port))) as HttpURLConnection
-        conn.connectTimeout = 10_000
-        conn.readTimeout = 10_000
+        val call = Net.client(port, 10_000, 10_000).newCall(Net.get(url(size), viaProxy = true))
+        val resp = call.execute()
         try {
-            val code = conn.responseCode
+            val code = resp.code
             check(code in 200..299) { "HTTP $code" }
+            val conn = Net.Resp(resp)
             val buf = ByteArray(64 * 1024)
             var bytes = 0L
             var start = 0L
@@ -169,7 +169,7 @@ object SpeedTest {
             onProgress(bytes, mbps(bytes, elapsed))
             return if (bytes < minOf(64 * 1024L, size / 2)) 0f else mbps(bytes, elapsed)
         } finally {
-            conn.disconnect()
+            resp.close()
         }
     }
 
