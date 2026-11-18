@@ -113,27 +113,61 @@ object Stats {
         _speed.value = emptyList()
     }
 
-    /** Вызывается раз в секунду: байты через прокси за прошедшую секунду и текущий сервер. */
+    // Накопитель: время и трафик по серверу/дню копятся в простых полях и переносятся
+    // в списки раз в 10 с (или при смене сервера, часа, дня), а не пересоздают их каждую секунду.
+    private var pId: String? = null
+    private var pHour = 0L
+    private var pDay = ""
+    private var pSeconds = 0
+    private var pDown = 0L
+    private var pUp = 0L
+    private var pDayDown = 0L
+    private var pDayUp = 0L
+    private var lastFlush = 0L
+    private const val FLUSH_MS = 10_000L
+
+    /**
+     * Байты через прокси за прошедшие [seconds] секунд и текущий сервер.
+     * Сервис вызывает раз в секунду, при выключенном экране — раз в 5 секунд.
+     */
     fun addTraffic(
-        down: Long, up: Long, serverId: String?, serverName: String?, ts: Long = System.currentTimeMillis(),
+        down: Long, up: Long, serverId: String?, serverName: String?, seconds: Int = 1, ts: Long = System.currentTimeMillis(),
     ): Unit = synchronized(lock) {
-        _speed.value = (_speed.value + SpeedSample(ts, down, up)).takeLast(SPEED_POINTS)
-        if (serverId != null) addUsage(serverId, serverName, down, up, ts)
-        if (down == 0L && up == 0L) return
-        val t = Traffic(down, up)
-        _session.value = _session.value + t
+        val n = seconds.coerceAtLeast(1)
+        // График скорости — по секундам: при редком опросе кладём среднее
+        val avg = SpeedSample(ts, down / n, up / n)
+        _speed.value = (_speed.value + List(n.coerceAtMost(SPEED_POINTS)) { avg }).takeLast(SPEED_POINTS)
+        if (down != 0L || up != 0L) _session.value = _session.value + Traffic(down, up)
+
+        val hour = ts / 3_600_000L * 3_600_000L
         val d = day(ts)
-        _daily.value = (_daily.value + (d to ((_daily.value[d] ?: Traffic()) + t)))
-            .entries.sortedBy { it.key }.takeLast(TRAFFIC_DAYS).associate { it.key to it.value }
+        if (serverId != pId || hour != pHour || d != pDay) flushPending()
+        serverName?.let { if (serverId != null) names[serverId] = it }
+        pId = serverId; pHour = hour; pDay = d
+        if (serverId != null) { pSeconds += n; pDown += down; pUp += up }
+        pDayDown += down; pDayUp += up
+        if (ts - lastFlush >= FLUSH_MS) flushPending()
     }
 
-    private fun addUsage(id: String, name: String?, down: Long, up: Long, ts: Long) {
-        name?.let { names[id] = it }
-        val hour = ts / 3_600_000L * 3_600_000L
+    /** Перенести накопленное в списки (вызывать под [lock]). */
+    private fun flushPending() {
+        lastFlush = System.currentTimeMillis()
+        val id = pId
+        if (id != null && pSeconds > 0) addUsage(id, pSeconds, pDown, pUp, pHour)
+        if (pDayDown != 0L || pDayUp != 0L) {
+            val t = Traffic(pDayDown, pDayUp)
+            _daily.value = (_daily.value + (pDay to ((_daily.value[pDay] ?: Traffic()) + t)))
+                .entries.sortedBy { it.key }.takeLast(TRAFFIC_DAYS).associate { it.key to it.value }
+        }
+        pSeconds = 0; pDown = 0; pUp = 0; pDayDown = 0; pDayUp = 0
+    }
+
+    private fun addUsage(id: String, seconds: Int, down: Long, up: Long, hour: Long) {
+        val ts = hour
         val all = _usage.value.toMutableList()
         val i = all.indexOfFirst { it.id == id && it.hour == hour }
         val old = if (i >= 0) all[i] else UsageBucket(id, hour, 0, 0, 0)
-        val upd = old.copy(seconds = old.seconds + 1, down = old.down + down, up = old.up + up)
+        val upd = old.copy(seconds = old.seconds + seconds, down = old.down + down, up = old.up + up)
         if (i >= 0) {
             all[i] = upd
             _usage.value = all
@@ -145,6 +179,7 @@ object Stats {
 
     /** Топ серверов по времени подключения с момента [since]. */
     fun topServers(since: Long, limit: Int = 5): List<ServerUsage> = synchronized(lock) {
+        flushPending()
         _usage.value.filter { it.hour >= since }
             .groupBy { it.id }
             .map { (id, list) ->
@@ -184,6 +219,7 @@ object Stats {
             _daily.value = emptyMap(); _pings.value = emptyMap(); _buckets.value = emptyList()
             _switches.value = emptyList(); _session.value = Traffic(); _speed.value = emptyList()
             _usage.value = emptyList(); names.clear(); _speeds.value = emptyMap()
+            pSeconds = 0; pDown = 0; pUp = 0; pDayDown = 0; pDayUp = 0
         }
         save()
     }
@@ -192,6 +228,7 @@ object Stats {
 
     fun save() {
         synchronized(lock) {
+            flushPending()
             runCatching { file.writeText(toJson().toString()) }
                 .onFailure { AppLog.w("Stats", "Не удалось сохранить stats.json", it) }
         }

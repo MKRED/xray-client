@@ -53,6 +53,10 @@ class XrayVpnService : VpnService() {
         /** При выключенном экране: текущий — раз в минуту, все — раз в 5 мин. */
         private const val SCREEN_OFF_CHECK_SEC = 60
         private const val FULL_CHECK_SCREEN_OFF_SEC = 300
+        /** Опрос счётчиков трафика при выключенном экране. */
+        private const val TRAFFIC_SCREEN_OFF_MS = 5_000L
+        /** Статистика на диск раз в 5 мин, плюс при выключении экрана и отключении VPN. */
+        private const val STATS_SAVE_MS = 300_000L
         private const val ACTION_START = "start"
         private const val ACTION_STOP = "stop"
         private const val ACTION_RESELECT = "reselect"
@@ -302,20 +306,32 @@ class XrayVpnService : VpnService() {
         else switchTo(choice.profile, choice.kind, choice.reason)
     }
 
-    /** Раз в секунду забираем счётчики трафика прокси из ядра. */
+    /**
+     * Забираем счётчики трафика прокси из ядра: раз в секунду, при выключенном экране — раз в 5 с
+     * (график скорости никто не видит, а итог трафика от этого не меняется).
+     */
     private fun startTraffic() {
         traffic?.cancel()
         traffic = scope.launch {
             var lastSave = System.currentTimeMillis()
+            var lastQuery = System.currentTimeMillis()
             while (isActive) {
-                delay(1000)
+                delay(if (AutoCheck.screenOn) 1000L else TRAFFIC_SCREEN_OFF_MS)
+                val now = System.currentTimeMillis()
+                val seconds = ((now - lastQuery + 500) / 1000).toInt().coerceIn(1, 60)
+                lastQuery = now
                 val (down, up) = queryTraffic()
-                Stats.addTraffic(down, up, current?.id, current?.name)
-                AutoCheck.onSecond(down, up)
-                com.mkred.xrayclient.core.SpeedSweep.onSecond(down)
-                if (System.currentTimeMillis() - lastSave > 60_000) {
+                Stats.addTraffic(down, up, current?.id, current?.name, seconds)
+                // Автопроверка и обход считают по секундам — раскладываем среднее
+                val d1 = down / seconds
+                val u1 = up / seconds
+                repeat(seconds.coerceAtMost(20)) {
+                    AutoCheck.onSecond(d1, u1)
+                    com.mkred.xrayclient.core.SpeedSweep.onSecond(d1)
+                }
+                if (now - lastSave > STATS_SAVE_MS) {
                     Stats.save()
-                    lastSave = System.currentTimeMillis()
+                    lastSave = now
                 }
             }
         }
@@ -399,7 +415,10 @@ class XrayVpnService : VpnService() {
             override fun onReceive(c: Context?, i: Intent?) {
                 when (i?.action) {
                     Intent.ACTION_SCREEN_ON -> { AutoCheck.screenOn = true; AutoCheck.requestProbe() }
-                    Intent.ACTION_SCREEN_OFF -> AutoCheck.screenOn = false
+                    Intent.ACTION_SCREEN_OFF -> {
+                        AutoCheck.screenOn = false
+                        scope.launch(Dispatchers.IO) { Stats.save() }
+                    }
                 }
             }
         }
