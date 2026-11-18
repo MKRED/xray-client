@@ -15,7 +15,7 @@ object XrayConfig {
      * @param localPort порт локального HTTP-прокси для запросов самого приложения
      *                  (обновления, подписки): приложение исключено из туннеля.
      */
-    fun forVpn(p: Profile, logLevel: String = "info", localPort: Int? = null, bypassRu: Boolean = false): String = JSONObject().apply {
+    fun forVpn(p: Profile, logLevel: String = "info", localPort: Int? = null, bypassRu: Boolean = false, blockQuic: Boolean = false): String = JSONObject().apply {
         put("log", JSONObject().apply {
             // «Обычный» уровень приложения: от ядра только предупреждения и ошибки.
             // На info ядро пишет строку на каждое соединение (с адресом сайта) — лишние записи и расход батареи.
@@ -56,6 +56,16 @@ object XrayConfig {
                     put("type", "field")
                     put("inboundTag", JSONArray(listOf("app-local")))
                     put("outboundTag", "proxy")
+                })
+                // QUIC (UDP 443) внутри VLESS поверх TCP работает плохо: два контроля перегрузки
+                // мешают друг другу. Блокируем — YouTube и браузеры сами переходят на TCP.
+                // Стоит до правил обхода РФ, иначе заблокированные в РФ сайты ушли бы в туннель раньше.
+                if (blockQuic) put(JSONObject().apply {
+                    put("type", "field")
+                    put("inboundTag", JSONArray(listOf("tun")))
+                    put("network", "udp")
+                    put("port", "443")
+                    put("outboundTag", "block")
                 })
                 if (bypassRu) ruRules().forEach { put(it) }
                 // Локальная сеть — напрямую

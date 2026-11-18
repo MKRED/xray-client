@@ -182,6 +182,7 @@ object AppStore {
         put("checkIntervalSec", d.checkIntervalSec)
         put("logLevel", d.logLevel)
         put("bypassRu", d.bypassRu)
+        put("blockQuic", d.blockQuic)
         put("metric", d.metric.name)
         put("speedTestMb", d.speedTestMb)
         put("sweep", d.sweep)
@@ -242,6 +243,7 @@ object AppStore {
             checkIntervalSec = o.optInt("checkIntervalSec", defaults.checkIntervalSec),
             logLevel = o.optString("logLevel").ifEmpty { defaults.logLevel },
             bypassRu = o.optBoolean("bypassRu", false),
+            blockQuic = o.optBoolean("blockQuic", true),
             metric = runCatching { Metric.valueOf(o.optString("metric")) }.getOrDefault(Metric.LATENCY),
             speedTestMb = o.optInt("speedTestMb", 5),
             sweep = o.optBoolean("sweep", false),

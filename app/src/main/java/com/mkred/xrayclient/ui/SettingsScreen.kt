@@ -134,6 +134,18 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 ) { page = SettingsPage.RU }
                 RowDivider()
                 SettingsRow(
+                    Icons.Bolt, IconTone.BLUE, "Блокировать QUIC",
+                    if (data.blockQuic) "Видео и сайты идут по TCP — ровнее через VPN" else "QUIC разрешён",
+                    trailing = {
+                        androidx.compose.material3.Switch(
+                            checked = data.blockQuic,
+                            onCheckedChange = { vm.setBlockQuic(it) },
+                            colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Accent, checkedThumbColor = C.Bg),
+                        )
+                    },
+                ) { vm.setBlockQuic(!data.blockQuic) }
+                RowDivider()
+                SettingsRow(
                     Icons.Shield, IconTone.BLUE, "Постоянная VPN", "Системные настройки Android",
                     trailing = { Icon(Icons.External, contentDescription = null, tint = Color(0xFF6B7280), modifier = Modifier.size(18.dp)) },
                 ) { context.startActivity(Intent(Settings.ACTION_VPN_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }

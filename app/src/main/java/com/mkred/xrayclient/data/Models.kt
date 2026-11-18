@@ -183,6 +183,8 @@ data class AppData(
     val sweepLastCount: Int = 0,
     /** Российские сайты — напрямую, мимо VPN. */
     val bypassRu: Boolean = false,
+    /** Блокировать QUIC (UDP 443): приложения переходят на TCP, видео через туннель идёт ровнее. */
+    val blockQuic: Boolean = true,
     /** Когда базы ru-geoip/ru-geosite обновлялись из сети (0 — встроенные в APK). */
     val geoUpdatedAt: Long = 0,
     /** Подробность лога ядра Xray: warning, info или debug. */

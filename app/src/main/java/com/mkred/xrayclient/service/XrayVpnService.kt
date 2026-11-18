@@ -259,7 +259,7 @@ class XrayVpnService : VpnService() {
         val c = controller ?: return false
         return try {
             AppLog.i(TAG, "Запуск ядра: «${p.name}» ${p.protocol} ${p.address}:${p.port} ${p.network}/${p.security}")
-            synchronized(coreLock) { synchronized(XrayCore.startLock) { c.startLoop(XrayConfig.forVpn(p, AppStore.data.value.logLevel, localPort, AppStore.data.value.bypassRu), fd) } }
+            synchronized(coreLock) { synchronized(XrayCore.startLock) { c.startLoop(XrayConfig.forVpn(p, AppStore.data.value.logLevel, localPort, AppStore.data.value.bypassRu, AppStore.data.value.blockQuic), fd) } }
             Net.proxyPort = localPort
             AppLog.i(TAG, "Ядро запущено")
             current = p

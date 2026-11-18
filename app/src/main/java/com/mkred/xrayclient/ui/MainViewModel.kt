@@ -99,6 +99,12 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     fun setSweepMobile(on: Boolean) = AppStore.update { it.copy(sweepMobile = on) }
     fun sweepNow(): Boolean = com.mkred.xrayclient.core.SpeedSweep.runNow()
 
+    fun setBlockQuic(on: Boolean) {
+        AppLog.i("Settings", "Блокировать QUIC: $on")
+        AppStore.update { it.copy(blockQuic = on) }
+        XrayVpnService.reload(app)
+    }
+
     // ---- российские сайты напрямую ----
 
     val geoUpdating = MutableStateFlow(false)
