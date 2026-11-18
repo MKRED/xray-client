@@ -32,10 +32,12 @@ data class AutoStatus(val kind: Kind, val text: String, val at: Long = System.cu
  *  2. Трафика нет — лёгкий пакет 150 КБ через работающее ядро: раз в 30 с,
  *     при выключенном экране раз в 5 мин. Маленький пакет — только сигнал,
  *     в качество он не идёт; подозрение подтверждаем полным замером.
- *  3. Медленно / «заморозка» — полные замеры кандидатов по 3 (не больше 6),
- *     переход на того, кто быстрее в 1,5 раза и хотя бы на 3 Мбит/с.
- *     Не нашли — остаёмся, «похоже, проблема в сети», перерыв 10 мин
- *     (заморозку перерыв не останавливает).
+ *  3. Медленно / «заморозка» — сразу ищем замену, без перерывов:
+ *     • есть сервер, замеренный за последние 10 мин и быстрее порога, — переходим на него без тестов;
+ *     • иначе меряем ещё не проверенных (до 6) и переходим на первого, кто быстрее порога;
+ *     • никто не дотянул — переходим на лучшего, если он хотя бы в 1,5 раза быстрее текущего.
+ *     Свежие замеры не повторяем: следующий поиск проверяет других, а когда проверены все —
+ *     ничего не качает, пока замеры не устареют.
  *  Работает только в режиме «Качество»: каждый замер сразу меняет оценку сервера,
  *  поэтому выбор по качеству сам не вернёт нас на медленный или «замёрзший» сервер.
  *  В режиме «Задержка» — только пинг, без тестов и трафика.
@@ -45,10 +47,10 @@ object AutoCheck {
     private const val PROBE_BYTES = 150_000L
     private const val PROBE_INTERVAL_ON = 30_000L
     private const val PROBE_INTERVAL_OFF = 300_000L
-    private const val COOLDOWN = 10 * 60_000L
+    /** Замер скорости считается свежим 10 минут — повторно такой сервер не меряем. */
+    private const val FRESH_MS = 10 * 60_000L
     private const val FREEZE_SECONDS = 8
     private const val BUSY_BYTES_PER_SEC = 125_000L // ~1 Мбит/с — «идёт загрузка»
-    private const val BATCH = 3
     private const val MAX_CANDIDATES = 6
 
     private val _status = MutableStateFlow<AutoStatus?>(null)
@@ -61,8 +63,6 @@ object AutoCheck {
     /** Последние секунды трафика: (приём, отдача). */
     private val window = ArrayDeque<Pair<Long, Long>>()
     private var job: Job? = null
-    private var cooldownUntil = 0L
-    private var lastSearchAt = 0L
     private var suspectFreeze = false
     private var nextProbeAt = 0L
 
@@ -158,15 +158,15 @@ object AutoCheck {
                 // Неудачный замер — оценка качества сервера падает до «≈», выбор на него не вернётся
                 Stats.recordSpeed(cur.id, 0f, AppStore.data.value.speedTestMb)
                 // Заморозка важнее перерыва, но не чаще раза в 2 мин — иначе при плохой сети будем жечь трафик
-                search(host, cur, 0f, SwitchKind.FREEZE, why, ignoreCooldown = now - lastSearchAt > 120_000)
+                search(host, cur, 0f, SwitchKind.FREEZE, why)
             }
             probe < slow && AppStore.speedTestAllowed(cur) -> {
                 // Маленький пакет занижает скорость — подтверждаем полным замером через рабочее ядро
-                val full = runCatching {
+                // (если текущий недавно уже меряли и он был медленным — берём тот замер)
+                val full = freshMbps(cur.id)?.takeIf { it < slow } ?: runCatching {
                     SpeedTest.download(port, AppStore.data.value.speedTestMb * 1_000_000L, { _, _ -> })
-                }.getOrDefault(0f)
-                Stats.recordSpeed(cur.id, full, AppStore.data.value.speedTestMb)
-                if (full < slow) search(host, cur, full, SwitchKind.SLOW, "медленно: ${fmt(full)}", ignoreCooldown = false)
+                }.getOrDefault(0f).also { Stats.recordSpeed(cur.id, it, AppStore.data.value.speedTestMb) }
+                if (full < slow) search(host, cur, full, SwitchKind.SLOW, "медленно: ${fmt(full)}")
                 else _status.value = AutoStatus(AutoStatus.Kind.OK, "Скорость в норме · ${fmt(full)}")
             }
             else -> _status.value = AutoStatus(AutoStatus.Kind.OK, "Сервер отвечает · проверено")
@@ -177,47 +177,56 @@ object AutoCheck {
 
     // ---- поиск сервера быстрее ----
 
-    private suspend fun search(host: Host, cur: Profile, curMbps: Float, kind: SwitchKind, why: String, ignoreCooldown: Boolean) {
-        val now = System.currentTimeMillis()
-        if (!ignoreCooldown && now < cooldownUntil) {
-            _status.value = AutoStatus(AutoStatus.Kind.NETWORK, "Медленно (${fmt(curMbps)}) · повторный поиск позже")
+    /** Скорость по замеру не старше 10 минут или null. */
+    private fun freshMbps(id: String): Float? =
+        Stats.speeds.value[id]?.lastOrNull()?.takeIf { System.currentTimeMillis() - it.ts < FRESH_MS }?.mbps
+
+    private suspend fun search(host: Host, cur: Profile, curMbps: Float, kind: SwitchKind, why: String) {
+        val slow = AppStore.data.value.slowMbps.toFloat()
+        val cands = candidates(cur, dead = curMbps < 1f)
+        val title = why.replaceFirstChar { it.uppercase() }
+
+        suspend fun go(p: Profile, mbps: Float, note: String) {
+            _status.value = AutoStatus(AutoStatus.Kind.OK, "Переключились · ${fmt(mbps)}")
+            host.switchTo(p, kind, "$why → ${fmt(mbps)}$note")
+            nextProbeAt = System.currentTimeMillis() + interval()
+        }
+
+        // 1. Уже знаем быстрый сервер по свежему замеру — переходим сразу, без тестов
+        val known = cands.mapNotNull { p -> freshMbps(p.id)?.let { p to it } }.maxByOrNull { it.second }
+        if (known != null && known.second >= slow) {
+            AppLog.i(TAG, "«${cur.name}»: $why — переходим на «${known.first.name}» по свежему замеру")
+            go(known.first, known.second, " (замер за 10 мин)")
             return
         }
-        lastSearchAt = now
-        val dead = curMbps < 1f
-        val cands = candidates(cur, dead)
-        AppLog.i(TAG, "«${cur.name}»: $why — проверяем кандидатов: ${cands.size}")
-        if (cands.isEmpty()) {
-            networkProblem(cur, 0)
-            return
-        }
+
+        // 2. Меряем тех, кого давно не проверяли; первый быстрее порога — наш
+        val todo = cands.filter { freshMbps(it.id) == null }.take(MAX_CANDIDATES)
+        AppLog.i(TAG, "«${cur.name}»: $why — проверяем кандидатов: ${todo.size}")
+        var best = known
         val size = AppStore.data.value.speedTestMb
-        var checked = 0
-        for (batch in cands.chunked(BATCH)) {
-            for ((i, p) in batch.withIndex()) {
-                _status.value = AutoStatus(AutoStatus.Kind.SEARCHING, "${why.replaceFirstChar { it.uppercase() }} — ищем сервер быстрее · ${i + 1} из ${batch.size}")
-                val mbps = SpeedTest.measure(p, size * 1_000_000L)
-                Stats.recordSpeed(p.id, mbps, size)
-                checked++
-                val better = mbps >= curMbps * 1.5f && mbps >= curMbps + 3f
-                if (better) {
-                    _status.value = AutoStatus(AutoStatus.Kind.OK, "Переключились · ${fmt(mbps)}")
-                    host.switchTo(p, kind, "$why → ${fmt(mbps)}")
-                    nextProbeAt = System.currentTimeMillis() + interval()
-                    return
-                }
+        for ((i, p) in todo.withIndex()) {
+            _status.value = AutoStatus(AutoStatus.Kind.SEARCHING, "$title — ищем сервер быстрее · ${i + 1} из ${todo.size}")
+            val mbps = SpeedTest.measure(p, size * 1_000_000L)
+            Stats.recordSpeed(p.id, mbps, size)
+            if (best == null || mbps > best.second) best = p to mbps
+            if (mbps >= slow) {
+                go(p, mbps, "")
+                return
             }
         }
-        networkProblem(cur, checked)
-    }
 
-    private fun networkProblem(cur: Profile, checked: Int) {
-        cooldownUntil = System.currentTimeMillis() + COOLDOWN
-        val text = if (checked > 0) "Проверено $checked — все не быстрее. Похоже, проблема в сети, повторим через 10 мин"
-        else "Нет серверов для проверки — остаёмся. Повторим через 10 мин"
+        // 3. До порога не дотянул никто — берём лучшего, если он заметно быстрее текущего
+        if (best != null && best.second >= curMbps * 1.5f && best.second >= curMbps + 1f) {
+            go(best.first, best.second, " (лучший из проверенных)")
+            return
+        }
+        val text = if (todo.isEmpty()) "Медленно (${fmt(curMbps)}) · быстрее нет среди проверенных за 10 мин"
+        else "Проверено ${todo.size} — все не быстрее. Похоже, проблема в сети"
         _status.value = AutoStatus(AutoStatus.Kind.NETWORK, text)
-        Stats.recordSwitch(
-            SwitchEvent(System.currentTimeMillis(), null, "Проверено $checked · остаёмся на «${cur.name}»", SwitchKind.NETWORK, "похоже, проблема в сети"),
+        // Событие пишем, только когда реально что-то проверяли — иначе засорим журнал каждые 30 с
+        if (todo.isNotEmpty()) Stats.recordSwitch(
+            SwitchEvent(System.currentTimeMillis(), null, "Проверено ${todo.size} · остаёмся на «${cur.name}»", SwitchKind.NETWORK, "похоже, проблема в сети"),
         )
     }
 
@@ -247,7 +256,7 @@ object AutoCheck {
             }
             else -> rank(usable.filter { ok(it) })
         }
-        return pool.take(MAX_CANDIDATES)
+        return pool
     }
 
     private fun fmt(mbps: Float) =
