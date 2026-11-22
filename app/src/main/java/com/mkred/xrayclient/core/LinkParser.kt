@@ -60,6 +60,8 @@ object LinkParser {
             mode = q["mode"],
             headerType = q["headerType"],
             allowInsecure = q["allowInsecure"] == "1" || q["insecure"] == "1",
+            pinnedCertSha256 = q["pcs"],
+            verifyCertByName = q["vcn"],
             link = link,
         )
     }
@@ -86,6 +88,8 @@ object LinkParser {
             host = o.optString("host").ifEmpty { null },
             serviceName = o.optString("path").ifEmpty { null }.takeIf { o.optString("net") == "grpc" },
             headerType = o.optString("type").ifEmpty { null },
+            pinnedCertSha256 = o.optString("pcs").ifEmpty { null },
+            verifyCertByName = o.optString("vcn").ifEmpty { null },
             link = link,
         )
     }

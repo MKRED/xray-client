@@ -35,8 +35,12 @@ object AppStore {
 
     fun init(context: Context) {
         file = File(context.filesDir, "data.json")
-        val loaded = runCatching { if (file.exists()) fromJson(JSONObject(file.readText())) else AppData() }
-            .onFailure { AppLog.e(TAG, "Не удалось прочитать data.json", it) }
+        val loaded = runCatching { JsonFile.read(file)?.let { fromJson(JSONObject(it)) } ?: AppData() }
+            .onFailure {
+                AppLog.e(TAG, "Не удалось прочитать data.json", it)
+                // Сохраняем копию, чтобы первое же изменение настроек не затёрло её насовсем
+                runCatching { file.copyTo(File(file.parentFile, "data.broken.json"), overwrite = true) }
+            }
             .getOrDefault(AppData())
         set(loaded, save = false)
         AppLog.i(TAG, "Загружено: подписок ${loaded.subscriptions.size}, серверов ${_profiles.value.size}, режим ${loaded.mode}")
@@ -55,7 +59,7 @@ object AppStore {
             }
         }.distinctBy { it.id }
         _usable.value = _profiles.value.filterNot { isExcluded(it, value) }
-        if (save) runCatching { file.writeText(toJson(value).toString()) }
+        if (save) runCatching { JsonFile.write(file, toJson(value).toString()) }
             .onFailure { AppLog.e(TAG, "Не удалось сохранить data.json", it) }
     }
 

@@ -171,6 +171,10 @@ object XrayConfig {
                 put("serverName", p.sni ?: p.host ?: p.address)
                 p.fingerprint?.let { put("fingerprint", it) }
                 p.alpn?.let { put("alpn", JSONArray(it.split(','))) }
+                // allowInsecure сюда не кладём: текущее ядро с ним не запускается.
+                // Для самоподписанных сертификатов в ссылке должен быть pcs или vcn.
+                p.pinnedCertSha256?.let { put("pinnedPeerCertSha256", it) }
+                p.verifyCertByName?.let { put("verifyPeerCertByName", it) }
             })
             "reality" -> put("realitySettings", JSONObject().apply {
                 put("serverName", p.sni ?: "")
