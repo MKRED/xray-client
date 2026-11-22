@@ -88,7 +88,15 @@ data class Profile(
     val serviceName: String? = null,
     val mode: String? = null,
     val headerType: String? = null,
+    /**
+     * В ссылке есть allowInsecure=1 / insecure=1. В ядро не передаётся:
+     * Xray убрал этот параметр и отказывается запускаться с ним.
+     */
     val allowInsecure: Boolean = false,
+    /** SHA-256 сертификата сервера (pcs), через запятую — замена allowInsecure. */
+    val pinnedCertSha256: String? = null,
+    /** Имена, по которым проверять сертификат вместо SNI (vcn), через запятую. */
+    val verifyCertByName: String? = null,
     val link: String,
     val subscriptionId: String? = null,
 ) {

@@ -100,7 +100,7 @@ object Stats {
 
     fun init(context: Context) {
         file = File(context.filesDir, "stats.json")
-        runCatching { if (file.exists()) load(JSONObject(file.readText())) }
+        runCatching { JsonFile.read(file)?.let { load(JSONObject(it)) } }
             .onFailure { AppLog.w("Stats", "Не удалось прочитать stats.json", it) }
     }
 
@@ -229,7 +229,7 @@ object Stats {
     fun save() {
         synchronized(lock) {
             flushPending()
-            runCatching { file.writeText(toJson().toString()) }
+            runCatching { JsonFile.write(file, toJson().toString()) }
                 .onFailure { AppLog.w("Stats", "Не удалось сохранить stats.json", it) }
         }
     }
